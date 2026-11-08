@@ -1,0 +1,130 @@
+{
+  "corpus": {
+    "documents": 6,
+    "pages": 43,
+    "questions": 36,
+    "facts_continuing_across_a_page_break": 3
+  },
+  "A baseline (fixed 1000 chars, per page, raw)": {
+    "chunks": 150,
+    "mean_tokens": 148.81333333333333,
+    "max_tokens": 192,
+    "fact_preserved": 0.9166666666666666,
+    "dense": {
+      "hit@1": 0.4722222222222222,
+      "hit@3": 0.7222222222222222,
+      "hit@5": 0.7777777777777778,
+      "mrr": 0.5900867938817232
+    },
+    "hybrid": {
+      "hit@1": 0.4722222222222222,
+      "hit@3": 0.5555555555555556,
+      "hit@5": 0.6111111111111112,
+      "mrr": 0.5483646850834352
+    },
+    "chunking_seconds": 0.5013975999318063,
+    "seconds_per_page": 0.011660409300739681
+  },
+  "B langchain recursive (clean text, 256 tok)": {
+    "chunks": 112,
+    "mean_tokens": 181.09821428571428,
+    "max_tokens": 251,
+    "fact_preserved": 0.9166666666666666,
+    "dense": {
+      "hit@1": 0.5,
+      "hit@3": 0.5277777777777778,
+      "hit@5": 0.5555555555555556,
+      "mrr": 0.543538014868027
+    },
+    "hybrid": {
+      "hit@1": 0.4166666666666667,
+      "hit@3": 0.5,
+      "hit@5": 0.5277777777777778,
+      "mrr": 0.4850318915651962
+    },
+    "chunking_seconds": 0.2460706999991089,
+    "seconds_per_page": 0.005722574418583928
+  },
+  "C custom, no heading context": {
+    "chunks": 92,
+    "mean_tokens": 240.84782608695653,
+    "max_tokens": 256,
+    "fact_preserved": 1.0,
+    "dense": {
+      "hit@1": 0.4166666666666667,
+      "hit@3": 0.5833333333333334,
+      "hit@5": 0.6111111111111112,
+      "mrr": 0.5217314771900368
+    },
+    "hybrid": {
+      "hit@1": 0.4166666666666667,
+      "hit@3": 0.6111111111111112,
+      "hit@5": 0.6666666666666666,
+      "mrr": 0.5292852273977607
+    },
+    "chunking_seconds": 0.25967440009117126,
+    "seconds_per_page": 0.006038939537003983
+  },
+  "D custom + heading/title context": {
+    "chunks": 92,
+    "mean_tokens": 240.84782608695653,
+    "max_tokens": 256,
+    "fact_preserved": 1.0,
+    "dense": {
+      "hit@1": 0.4166666666666667,
+      "hit@3": 0.5833333333333334,
+      "hit@5": 0.6944444444444444,
+      "mrr": 0.5318891620504798
+    },
+    "hybrid": {
+      "hit@1": 0.4444444444444444,
+      "hit@3": 0.6111111111111112,
+      "hit@5": 0.6666666666666666,
+      "mrr": 0.558410418628978
+    },
+    "chunking_seconds": 0.25889709987677634,
+    "seconds_per_page": 0.006020862787832008
+  },
+  "E docling HybridChunker (320 tok)": {
+    "chunks": 72,
+    "mean_tokens": 276.97222222222223,
+    "max_tokens": 367,
+    "fact_preserved": 1.0,
+    "dense": {
+      "hit@1": 0.5555555555555556,
+      "hit@3": 0.75,
+      "hit@5": 0.8611111111111112,
+      "mrr": 0.670114028930454
+    },
+    "hybrid": {
+      "hit@1": 0.5833333333333334,
+      "hit@3": 0.8055555555555556,
+      "hit@5": 0.8333333333333334,
+      "mrr": 0.6990881032547699
+    },
+    "chunking_seconds": 84.8540433999151,
+    "seconds_per_page": 1.9733498465096535
+  },
+  "F docling markdown + langchain headers": {
+    "chunks": 114,
+    "mean_tokens": 176.7017543859649,
+    "max_tokens": 254,
+    "fact_preserved": 1.0,
+    "dense": {
+      "hit@1": 0.6388888888888888,
+      "hit@3": 0.8611111111111112,
+      "hit@5": 0.9722222222222222,
+      "mrr": 0.7706018518518518
+    },
+    "hybrid": {
+      "hit@1": 0.5833333333333334,
+      "hit@3": 0.8611111111111112,
+      "hit@5": 0.8888888888888888,
+      "mrr": 0.7249633711804765
+    },
+    "chunking_seconds": 0.04909650003537536,
+    "seconds_per_page": 0.0011417790705901246
+  },
+  "docling_convert_seconds_total": 73.83488159999251,
+  "docling_convert_seconds_per_page": 1.7170902697672679
+}

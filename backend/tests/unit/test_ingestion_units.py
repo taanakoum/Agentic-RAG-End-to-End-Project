@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import uuid
 from itertools import pairwise
@@ -15,13 +16,6 @@ from app.core.exceptions import (
     PayloadTooLargeError,
     UnsupportedMediaTypeError,
 )
-from app.ingestion.chunking import chunk_pages, looks_like_heading
-from app.ingestion.extraction import (
-    PageText,
-    extract_text_layer,
-    extract_with_ocr_fallback,
-    normalize_text,
-)
 from app.ingestion.indexing import point_id
 from app.ingestion.states import (
     ALLOWED,
@@ -30,9 +24,9 @@ from app.ingestion.states import (
     check_transition,
     is_retrievable,
 )
+from app.ingestion.textnorm import normalize_text
 from app.ingestion.validation import safe_filename, validate_pdf
 from tests.pdfs import (
-    blank_pdf,
     corrupted_pdf,
     encrypted_pdf,
     make_pdf,
@@ -56,7 +50,7 @@ def check(data: bytes, *, name: str = "doc.pdf", mime: str | None = "application
     return validate_pdf(io.BytesIO(data), filename=name, content_type=mime, settings=settings(**kw))
 
 
-# ================================================================ validation
+# ================================================================ validation (sandboxed inspect)
 
 
 def test_valid_pdf_passes_and_is_hashed() -> None:
@@ -64,8 +58,6 @@ def test_valid_pdf_passes_and_is_hashed() -> None:
     result = check(data)
     assert result.page_count == 2
     assert result.size == len(data)
-    import hashlib
-
     assert result.sha256 == hashlib.sha256(data).hexdigest()
 
 
@@ -152,6 +144,12 @@ def test_header_may_follow_a_small_prefix_but_not_beyond_1k() -> None:
         check(b"x" * 2000 + data)
 
 
+def test_inspection_timeout_becomes_a_clean_rejection() -> None:
+    with pytest.raises(DocumentValidationError) as e:
+        check(sample_text_pdf(), inspect_timeout_s=0.01)  # the child cannot even start in 10 ms
+    assert _code(e) == "DOCUMENT_PARSE_TIMEOUT"
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -172,16 +170,9 @@ def test_safe_filename(raw: str | None, expected: str) -> None:
 
 def test_happy_path_is_allowed_step_by_step() -> None:
     path = [
-        S.PENDING,
-        S.VALIDATING,
-        S.QUEUED,
-        S.PROCESSING,
-        S.EXTRACTING,
-        S.CHUNKING,
-        S.EMBEDDING,
-        S.INDEXING,
-        S.COMPLETED,
-    ]
+        S.PENDING, S.VALIDATING, S.QUEUED, S.PROCESSING, S.EXTRACTING,
+        S.CHUNKING, S.EMBEDDING, S.INDEXING, S.COMPLETED,
+    ]  # fmt: skip
     for current, target in pairwise(path):
         check_transition(current, target)
 
@@ -192,8 +183,8 @@ def test_happy_path_is_allowed_step_by_step() -> None:
         (S.PENDING, S.COMPLETED),
         (S.QUEUED, S.COMPLETED),
         (S.QUEUED, S.INDEXING),
-        (S.EXTRACTING, S.EMBEDDING),  # skipping a stage
-        (S.INDEXING, S.EXTRACTING),  # going backwards
+        (S.EXTRACTING, S.EMBEDDING),
+        (S.INDEXING, S.EXTRACTING),
         (S.COMPLETED, S.FAILED),
         (S.COMPLETED, S.PROCESSING),
         (S.FAILED, S.COMPLETED),
@@ -210,176 +201,19 @@ def test_every_active_stage_can_fail_or_requeue_and_failed_only_requeues() -> No
     for stage in (S.PROCESSING, S.EXTRACTING, S.CHUNKING, S.EMBEDDING, S.INDEXING):
         assert {S.FAILED, S.QUEUED} <= ALLOWED[stage]
     assert ALLOWED[S.FAILED] == {S.QUEUED}
-    assert ALLOWED[S.COMPLETED] == {S.QUEUED}  # explicit re-index only
+    assert ALLOWED[S.COMPLETED] == {S.QUEUED}
 
 
 def test_only_completed_is_retrievable() -> None:
     assert [s for s in S if is_retrievable(s)] == [S.COMPLETED]
 
 
-# ================================================================ extraction / chunking
-
-
-def test_text_layer_extraction_keeps_pages() -> None:
-    pages, total = extract_text_layer(io.BytesIO(sample_text_pdf("zeta")), settings=settings())
-    assert total == 2
-    assert [p.page_number for p in pages] == [1, 2]
-    assert "quarterly results" in pages[0].text
-    assert "zeta" in pages[1].text
-    assert "financial summary" in pages[1].text.lower()
+# ================================================================ text helpers
 
 
 def test_normalize_text() -> None:
     assert normalize_text("a\u00a0\u00a0b \t c\n\n\n\n\nd\x00e") == "a b c\n\nde"
     assert normalize_text("0a 9z") == "0a 9z"  # digits/letters are never stripped
-
-
-class FakeOcr:
-    def __init__(self, text: str = "Recovered text from the scanned page number") -> None:
-        self.calls: list[int] = []
-        self.text = text
-
-    def ocr_pdf_page(self, pdf_bytes: bytes, page_index: int, *, dpi: int) -> str:
-        self.calls.append(page_index)
-        return f"{self.text} {page_index + 1}"
-
-
-def test_ocr_runs_only_for_pages_without_text() -> None:
-    pages = [
-        PageText(1, "A page that already has plenty of extractable text in its layer."),
-        PageText(2, ""),
-        PageText(3, "   12  "),
-    ]
-    ocr = FakeOcr()
-    result = extract_with_ocr_fallback(b"pdf", pages, settings=settings(), ocr=ocr)
-    assert ocr.calls == [1, 2]
-    assert result.ocr_status == "used"
-    assert result.ocr_pages == 2
-    assert [p.from_ocr for p in result.pages] == [False, True, True]
-    assert result.pages[0].text == pages[0].text
-
-
-def test_ocr_not_needed_when_text_is_present() -> None:
-    pages = [PageText(1, "Plenty of real text on this page, definitely enough characters.")]
-    ocr = FakeOcr()
-    result = extract_with_ocr_fallback(b"pdf", pages, settings=settings(), ocr=ocr)
-    assert (result.ocr_status, result.ocr_pages, ocr.calls) == ("not_needed", 0, [])
-
-
-def test_ocr_disabled_or_missing_engine() -> None:
-    pages = [PageText(1, "")]
-    assert (
-        extract_with_ocr_fallback(
-            b"x", pages, settings=settings(ocr_enabled=False), ocr=FakeOcr()
-        ).ocr_status
-        == "disabled"
-    )
-    assert (
-        extract_with_ocr_fallback(b"x", pages, settings=settings(), ocr=None).ocr_status
-        == "disabled"
-    )
-
-
-def test_ocr_page_limit_marks_result_limited() -> None:
-    pages = [PageText(i, "") for i in range(1, 6)]
-    ocr = FakeOcr()
-    result = extract_with_ocr_fallback(b"x", pages, settings=settings(ocr_max_pages=2), ocr=ocr)
-    assert ocr.calls == [0, 1]
-    assert result.ocr_status == "limited"
-    assert result.ocr_pages == 2
-
-
-def test_ocr_failure_on_every_page_is_reported_not_raised() -> None:
-    class Broken:
-        def ocr_pdf_page(self, pdf_bytes: bytes, page_index: int, *, dpi: int) -> str:
-            raise RuntimeError("model failed")
-
-    result = extract_with_ocr_fallback(
-        b"x", [PageText(1, ""), PageText(2, "")], settings=settings(), ocr=Broken()
-    )
-    assert result.ocr_status == "failed"
-    assert result.ocr_pages == 0
-
-
-def test_blank_pdf_has_no_text_layer() -> None:
-    pages, total = extract_text_layer(io.BytesIO(blank_pdf()), settings=settings())
-    assert total == 1
-    assert pages[0].text == ""
-
-
-def long_text(n_sentences: int) -> str:
-    return " ".join(
-        f"Sentence number {i} talks about subject {i % 7} in some detail."
-        for i in range(n_sentences)
-    )
-
-
-def test_chunks_respect_size_and_page_boundaries_and_overlap() -> None:
-    pages = [PageText(1, long_text(60)), PageText(2, long_text(30))]
-    chunks = chunk_pages(pages, size=400, overlap=80, min_chars=20)
-    assert chunks
-    assert all(len(c.text) <= 400 for c in chunks)
-    assert [c.index for c in chunks] == list(range(len(chunks)))
-    assert {c.page_number for c in chunks} == {1, 2}
-    page1 = [c for c in chunks if c.page_number == 1]
-    assert page1[-1].index < min(c.index for c in chunks if c.page_number == 2)
-    # overlap: consecutive chunks of a page share some text
-    shared = [a.text[-40:] in b.text or b.text[:40] in a.text for a, b in pairwise(page1)]
-    assert any(shared)
-
-
-def test_every_sentence_ends_up_in_some_chunk() -> None:
-    text = long_text(40)
-    chunks = chunk_pages([PageText(1, text)], size=300, overlap=50, min_chars=20)
-    joined = " ".join(c.text for c in chunks)
-    for i in range(40):
-        assert f"Sentence number {i} " in joined
-
-
-def test_headings_are_tracked_across_pages() -> None:
-    pages = [
-        PageText(1, "INTRODUCTION\nThis is the first section with enough words to make a chunk."),
-        PageText(
-            2, "More text continuing the same section on the next page, still no new heading."
-        ),
-        PageText(3, "2.1 Methods\nA description of the methods used in the study goes here."),
-    ]
-    chunks = chunk_pages(pages, size=500, overlap=50, min_chars=20)
-    assert [c.heading for c in chunks] == ["INTRODUCTION", "INTRODUCTION", "2.1 Methods"]
-
-
-@pytest.mark.parametrize(
-    ("line", "expected"),
-    [
-        ("INTRODUCTION", True),
-        ("1.2 Related Work", True),
-        ("Financial Summary", True),
-        ("This is a normal sentence that ends with a period.", False),
-        ("a" * 120, False),
-        ("see the table below,", False),
-        ("ok", False),
-    ],
-)
-def test_heading_detection(line: str, expected: bool) -> None:
-    assert looks_like_heading(line) is expected
-
-
-def test_meaningless_chunks_are_dropped() -> None:
-    pages = [
-        PageText(1, "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"),
-        PageText(2, "12"),
-        PageText(3, ""),
-    ]
-    assert chunk_pages(pages, size=500, overlap=50, min_chars=30) == []
-
-
-def test_unbroken_text_is_hard_split_within_size() -> None:
-    chunks = chunk_pages([PageText(1, "x" * 2500)], size=500, overlap=0, min_chars=10)
-    assert all(len(c.text) <= 500 for c in chunks)
-    assert sum(len(c.text) for c in chunks) == 2500
-
-
-# ================================================================ deterministic point ids
 
 
 def test_point_ids_are_deterministic_and_distinct() -> None:

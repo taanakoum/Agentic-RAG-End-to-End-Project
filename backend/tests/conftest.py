@@ -22,6 +22,7 @@ os.environ["JWT_SECRET"] = "test-only-jwt-secret-not-used-anywhere-else-01234567
 # Cheap Argon2 parameters keep the suite fast; the prod validator still enforces OWASP minimums.
 os.environ["MFA_ENCRYPTION_KEY"] = "dGVzdC1vbmx5LWZlcm5ldC1rZXktMzItYnl0ZXMhISE="
 os.environ["EMAIL_FILE_DIR"] = str(_TMP_ROOT / "outbox")
+os.environ["PDF_PIPELINE"] = "light"  # fast; Docling is exercised by dedicated tests
 os.environ["INGESTION_MAX_ATTEMPTS"] = "3"
 os.environ["INGESTION_RETRY_BASE_S"] = "0.05"
 os.environ["RECONCILE_QUEUED_TTL_S"] = "1"

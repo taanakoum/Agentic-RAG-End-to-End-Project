@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO
-
-from pypdf import PdfReader
 
 from app.core.config import Settings
 from app.core.exceptions import (
@@ -17,6 +17,7 @@ from app.core.exceptions import (
     PayloadTooLargeError,
     UnsupportedMediaTypeError,
 )
+from app.ingestion.parsing import ParseError, PdfParser, SandboxedPdfParser
 
 _ALLOWED_MIME = frozenset(
     {"application/pdf", "application/x-pdf", "application/acrobat", "application/octet-stream", ""}
@@ -41,7 +42,12 @@ def safe_filename(raw: str | None) -> str:
 
 
 def validate_pdf(
-    file: BinaryIO, *, filename: str | None, content_type: str | None, settings: Settings
+    file: BinaryIO,
+    *,
+    filename: str | None,
+    content_type: str | None,
+    settings: Settings,
+    parser: PdfParser | None = None,
 ) -> ValidatedPdf:
     """Run every upload check in order; raises a specific AppError for each failure."""
     # 1-2. presence and extension (the extension alone never makes a file valid)
@@ -82,28 +88,34 @@ def validate_pdf(
         digest.update(chunk)
     file.seek(0)
     # 5-6, 8-9. parser validity, readability, page count, encryption
-    page_count = _inspect_with_parser(file, settings)
+    page_count = _inspect_in_sandbox(file, settings, parser or SandboxedPdfParser(settings))
     file.seek(0)
     return ValidatedPdf(size=size, sha256=digest.hexdigest(), page_count=page_count)
 
 
-def _inspect_with_parser(file: BinaryIO, settings: Settings) -> int:
-    try:
-        reader = PdfReader(file, strict=False)
-        encrypted = reader.is_encrypted
-        page_count = 0 if encrypted else len(reader.pages)
-    except Exception as exc:
-        # pypdf raises many unrelated exception types (PdfReadError, ValueError, KeyError,
-        # RecursionError, ...) on hostile or damaged input; every one means "not a usable PDF".
-        raise DocumentValidationError(
-            "The PDF is corrupted or malformed and cannot be read.", code="DOCUMENT_CORRUPTED"
-        ) from exc
-    if encrypted:
+def _inspect_in_sandbox(file: BinaryIO, settings: Settings, parser: PdfParser) -> int:
+    """Open the file with the real parser in a resource-limited child process."""
+    with tempfile.TemporaryDirectory(prefix="upload-") as directory:
+        path = Path(directory) / "upload.pdf"
+        with path.open("wb") as out:
+            while chunk := file.read(_CHUNK):
+                out.write(chunk)
+        try:
+            inspected = parser.inspect(path)
+        except ParseError as exc:
+            if exc.code == "DOCUMENT_PARSE_TIMEOUT":
+                raise DocumentValidationError(
+                    "The PDF took too long to inspect and was rejected.", code=exc.code
+                ) from exc
+            raise DocumentValidationError(
+                "The PDF is corrupted or malformed and cannot be read.", code="DOCUMENT_CORRUPTED"
+            ) from exc
+    if inspected.encrypted:
         raise DocumentEncryptedError()
-    if page_count == 0:
+    if inspected.page_count == 0:
         raise DocumentValidationError("The PDF contains no pages.", code="DOCUMENT_CORRUPTED")
-    if page_count > settings.max_pdf_pages:
+    if inspected.page_count > settings.max_pdf_pages:
         raise DocumentTooManyPagesError(
-            f"The PDF has {page_count} pages; the maximum is {settings.max_pdf_pages}."
+            f"The PDF has {inspected.page_count} pages; the maximum is {settings.max_pdf_pages}."
         )
-    return page_count
+    return inspected.page_count

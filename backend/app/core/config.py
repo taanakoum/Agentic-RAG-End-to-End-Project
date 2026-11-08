@@ -126,16 +126,27 @@ class Settings(BaseSettings):
 
     # Documents / ingestion
     max_pdf_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
-    max_pdf_pages: int = Field(default=300, ge=1)
+    max_pdf_pages: int = Field(default=200, ge=1)
     upload_validation_timeout_s: float = Field(default=20.0, gt=0)
     rl_upload_limit: int = Field(default=30, ge=1)
     rl_upload_window_s: int = Field(default=3600, ge=1)
+    pdf_pipeline: Literal["docling", "light"] = "docling"
+    inspect_timeout_s: float = Field(default=20.0, gt=0)
+    inspect_memory_mb: int = Field(default=1024, ge=64)
+    parse_timeout_base_s: float = Field(default=60.0, gt=0)
+    parse_timeout_per_page_s: float = Field(default=4.0, gt=0)
+    parse_timeout_max_s: float = Field(default=800.0, gt=0)
+    parse_memory_mb: int = Field(default=6144, ge=256)
+    docling_tables: bool = True
+    docling_max_tokens: int = Field(default=320, ge=64, le=512)
     ocr_enabled: bool = True
     ocr_max_pages: int = Field(default=40, ge=1)
     ocr_dpi: int = Field(default=200, ge=72, le=400)
     min_text_chars_per_page: int = Field(default=25, ge=1)
-    chunk_size_chars: int = Field(default=1000, ge=200)
-    chunk_overlap_chars: int = Field(default=150, ge=0)
+    chunk_target_tokens: int = Field(default=256, ge=32)
+    chunk_max_tokens: int = Field(default=384, ge=64)
+    chunk_min_tokens: int = Field(default=48, ge=1)
+    chunk_overlap_tokens: int = Field(default=40, ge=0)
     min_chunk_chars: int = Field(default=30, ge=1)
     model_cache_dir: Path = REPO_ROOT / "data" / "models"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
@@ -164,8 +175,13 @@ class Settings(BaseSettings):
             raise ValueError("celery_task_soft_time_limit_s must be < celery_task_time_limit_s")
         if len(self.jwt_secret.get_secret_value()) < 32:
             raise ValueError("jwt_secret must be set and at least 32 characters")
-        if self.chunk_overlap_chars >= self.chunk_size_chars:
-            raise ValueError("chunk_overlap_chars must be smaller than chunk_size_chars")
+        if not (
+            self.chunk_min_tokens < self.chunk_target_tokens <= self.chunk_max_tokens
+            and self.chunk_overlap_tokens < self.chunk_target_tokens
+        ):
+            raise ValueError(
+                "chunk token settings must satisfy min < target <= max and overlap < target"
+            )
         retired = self.jwt_retired_keys
         if self.jwt_key_id in retired:
             raise ValueError("jwt_retired_keys must not contain the active jwt_key_id")

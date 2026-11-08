@@ -85,6 +85,7 @@ class Document(Base):
     error_recoverable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    parser: Mapped[str | None] = mapped_column(String(16), nullable=True)
     ocr_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="not_needed")
     ocr_pages: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -3,25 +3,19 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import uuid
 from collections.abc import Sequence
+from pathlib import Path
 
 from app.core.logging import get_logger
-from app.ingestion.chunking import Chunk, chunk_pages
+from app.ingestion.chunking import Chunk
 from app.ingestion.embedding import SparseVec
-from app.ingestion.extraction import (
-    ExtractionResult,
-    PageText,
-    extract_text_layer,
-    extract_with_ocr_fallback,
-    meaningful_chars,
-)
 from app.ingestion.indexing import (
     delete_document_points,
     delete_stale_versions,
     upsert_chunks,
 )
+from app.ingestion.parsing import ParseError, parse_bytes
 from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.states import DocumentStatus, JobStatus
 from app.ingestion.store import IngestionStore, JobClaim, LostStateError
@@ -49,7 +43,7 @@ def _embed(rt: WorkerRuntime, chunks: Sequence[Chunk]) -> tuple[list[list[float]
     dense: list[list[float]] = []
     sparse: list[SparseVec] = []
     for start in range(0, len(chunks), batch):
-        texts = [c.text for c in chunks[start : start + batch]]
+        texts = [c.embed_text or c.text for c in chunks[start : start + batch]]
         dense.extend(rt.embedder.embed_dense(texts))
         sparse.extend(rt.embedder.embed_sparse(texts))
     if len(dense) != len(chunks) or len(sparse) != len(chunks):
@@ -110,42 +104,31 @@ def _process(rt: WorkerRuntime, store: IngestionStore, claim: JobClaim) -> str:
     store.transition(document_id, S.QUEUED, S.PROCESSING)
     store.transition(document_id, S.PROCESSING, S.EXTRACTING)
 
-    # --- extract (text layer, then OCR for scanned pages) -----------------------------------
+    # --- parse + chunk in the sandbox (Docling or light pipeline; OCR only if a page needs it) ---
     with rt.storage.open(key) as handle:
         data = handle.read()
     if hashlib.sha256(data).hexdigest() != content_hash:
         raise PermanentIngestionError(
             "STORAGE_INTEGRITY", "The stored file does not match its recorded checksum."
         )
-    layer, page_count = _text_layer(data, rt)
-    extraction: ExtractionResult = extract_with_ocr_fallback(
-        data, layer, settings=settings, ocr=rt.ocr
-    )
-    if sum(meaningful_chars(p.text) for p in extraction.pages) < settings.min_chunk_chars:
-        raise PermanentIngestionError(
-            "DOCUMENT_NO_TEXT",
-            _no_text_message(extraction),
+    try:
+        parsed = parse_bytes(
+            rt.parser, data, title=Path(filename).stem or "document", page_count=doc.page_count or 1
         )
+    except ParseError as exc:
+        raise PermanentIngestionError(exc.code, exc.message) from exc
+    if not parsed.chunks:
+        raise PermanentIngestionError("DOCUMENT_NO_TEXT", _no_text_message(parsed.ocr_status))
     store.transition(
         document_id,
         S.EXTRACTING,
         S.CHUNKING,
-        page_count=page_count,
-        ocr_status=extraction.ocr_status,
-        ocr_pages=extraction.ocr_pages,
+        page_count=parsed.page_count,
+        ocr_status=parsed.ocr_status,
+        ocr_pages=parsed.ocr_pages,
+        parser=parsed.parser,
     )
-
-    # --- chunk ---------------------------------------------------------------------------------
-    chunks = chunk_pages(
-        extraction.pages,
-        size=settings.chunk_size_chars,
-        overlap=settings.chunk_overlap_chars,
-        min_chars=settings.min_chunk_chars,
-    )
-    if not chunks:
-        raise PermanentIngestionError(
-            "DOCUMENT_NO_TEXT", "No meaningful text could be extracted from this document."
-        )
+    chunks = parsed.chunks
     store.transition(document_id, S.CHUNKING, S.EMBEDDING)
 
     # --- embed ---------------------------------------------------------------------------------
@@ -183,20 +166,12 @@ def _process(rt: WorkerRuntime, store: IngestionStore, claim: JobClaim) -> str:
     return "completed"
 
 
-def _text_layer(data: bytes, rt: WorkerRuntime) -> tuple[list[PageText], int]:
-    try:
-        return extract_text_layer(io.BytesIO(data), settings=rt.settings)
-    except Exception as exc:
-        code = getattr(exc, "code", "DOCUMENT_CORRUPTED")
-        raise PermanentIngestionError(str(code), str(exc)) from exc
-
-
-def _no_text_message(extraction: ExtractionResult) -> str:
+def _no_text_message(ocr_status: str) -> str:
     base = "No extractable text was found in this document."
-    if extraction.ocr_status == "disabled":
+    if ocr_status == "disabled":
         return base + " It looks scanned and OCR is disabled."
-    if extraction.ocr_status == "failed":
-        return base + " OCR was attempted but failed on every page."
-    if extraction.ocr_status in {"used", "limited"}:
+    if ocr_status == "failed":
+        return base + " OCR was attempted but recognised no usable text."
+    if ocr_status in {"used", "limited"}:
         return base + " OCR ran but recognised no usable text."
     return base

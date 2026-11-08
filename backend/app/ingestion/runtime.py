@@ -13,8 +13,7 @@ from app.core.config import Settings, get_settings
 from app.database.session import create_sync_db_engine, sync_session_factory
 from app.infra.clients import create_sync_qdrant
 from app.ingestion.embedding import Embedder, get_embedder
-from app.ingestion.extraction import OcrEngine
-from app.ingestion.ocr import RapidOcrEngine
+from app.ingestion.parsing import PdfParser, SandboxedPdfParser
 from app.storage.base import ObjectStorage
 from app.storage.factory import create_storage
 
@@ -27,7 +26,7 @@ class WorkerRuntime:
     storage: ObjectStorage
     qdrant: QdrantClient
     embedder: Embedder
-    ocr: OcrEngine | None
+    parser: PdfParser
 
     @classmethod
     def create(cls, settings: Settings) -> WorkerRuntime:
@@ -39,7 +38,7 @@ class WorkerRuntime:
             storage=create_storage(settings),
             qdrant=create_sync_qdrant(settings),
             embedder=get_embedder(settings),
-            ocr=RapidOcrEngine() if settings.ocr_enabled else None,
+            parser=SandboxedPdfParser(settings),
         )
 
     def close(self) -> None:

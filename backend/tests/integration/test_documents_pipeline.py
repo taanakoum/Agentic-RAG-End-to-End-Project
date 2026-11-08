@@ -29,6 +29,7 @@ from app.ingestion import pipeline as pipeline_module
 from app.ingestion import purge as purge_module
 from app.ingestion.embedding import FastEmbedEmbedder, set_embedder_factory
 from app.ingestion.outbox import dispatch_outbox
+from app.ingestion.parsing import SandboxedPdfParser
 from app.ingestion.reconcile import reconcile
 from app.ingestion.runtime import WorkerRuntime, set_runtime
 from app.ingestion.store import IngestionStore
@@ -45,7 +46,7 @@ from tests.integration.docs_helpers import (
     upload,
     wait_for_status,
 )
-from tests.pdfs import blank_pdf, sample_text_pdf, scanned_pdf
+from tests.pdfs import blank_pdf, mixed_pdf, sample_text_pdf, scanned_pdf, sectioned_pdf
 
 pytestmark = pytest.mark.integration
 
@@ -138,7 +139,7 @@ async def test_valid_pdf_is_ingested_end_to_end(
             seen.append(str(s.execute(text("SELECT status FROM documents")).scalar()))
 
     embedder.on_dense = snapshot
-    up = (await upload(client, headers, sample_text_pdf("e2e"))).json()
+    up = (await upload(client, headers, sectioned_pdf("e2e"))).json()
     doc = await wait_for_status(client, headers, up["document"]["id"], {"completed", "failed"})
 
     assert doc["status"] == "completed", doc
@@ -167,12 +168,13 @@ async def test_valid_pdf_is_ingested_end_to_end(
         )
         assert len(p.vector["dense"]) == get_settings().embedding_dim
         assert p.vector["sparse"].indices
-    pages = {p.payload["page_number"] for p in points}
-    assert pages == {1, 2}
-    headings = {p.payload["page_number"]: p.payload["heading"] for p in points}
-    assert headings[1] == "INTRODUCTION"
-    assert headings[2] == "FINANCIAL SUMMARY"
+    assert {p.payload["page_number"] for p in points} == {1, 2}
+    by_heading = {p.payload["heading"]: p.payload for p in points}
+    assert by_heading["INTRODUCTION"]["page_number"] == 1
+    assert by_heading["FINANCIAL SUMMARY"]["page_number"] == 2
+    assert all(p.payload["section_path"] == p.payload["heading"] for p in points)
     assert any("Reference code e2e" in p.payload["text"] for p in points)
+    assert doc["parser"] == "light"
     assert await scalar(infra, "SELECT count(*) FROM outbox_events WHERE sent_at IS NULL") == 0
     assert stored_object_count() == 1
 
@@ -217,9 +219,8 @@ async def test_scanned_pdf_is_recovered_with_open_source_ocr(
 async def test_scanned_pdf_with_ocr_disabled_fails_with_a_clear_reason(
     client: httpx2.AsyncClient, runtime: WorkerRuntime, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        runtime, "settings", runtime.settings.model_copy(update={"ocr_enabled": False})
-    )
+    no_ocr = runtime.settings.model_copy(update={"ocr_enabled": False})
+    monkeypatch.setattr(runtime, "parser", SandboxedPdfParser(no_ocr))
     headers = await new_user(client)
     doc = await upload_and_wait(client, headers, scanned_pdf(), {"failed", "completed"})
     assert doc["status"] == "failed"
@@ -227,6 +228,22 @@ async def test_scanned_pdf_with_ocr_disabled_fails_with_a_clear_reason(
     assert "OCR is disabled" in doc["error"]["message"]
     assert doc["error"]["recoverable"] is False
     assert points_for(doc["id"]) == []  # nothing meaningless was indexed
+
+
+async def test_text_pdf_never_triggers_ocr_but_a_mixed_pdf_ocrs_only_the_scanned_page(
+    client: httpx2.AsyncClient, runtime: WorkerRuntime
+) -> None:
+    headers = await new_user(client)
+    text_doc = await upload_and_wait(client, headers, sample_text_pdf("noocr"), {"completed"})
+    assert (text_doc["ocr_status"], text_doc["ocr_pages"]) == ("not_needed", 0)
+
+    mixed = await upload_and_wait(client, headers, mixed_pdf(), {"completed", "failed"})
+    assert mixed["status"] == "completed", mixed
+    assert mixed["page_count"] == 3
+    assert (mixed["ocr_status"], mixed["ocr_pages"]) == ("used", 1)  # only the scanned page
+    by_page = {p.payload["page_number"]: p.payload["text"] for p in points_for(mixed["id"])}
+    assert "quarterly results" in " ".join(t for n, t in by_page.items() if n in {1, 2})
+    assert "INVOICE" in by_page[3].upper()
 
 
 async def test_pdf_with_no_text_and_no_images_fails_permanently(client: httpx2.AsyncClient) -> None:
@@ -634,3 +651,62 @@ async def test_ingestion_with_the_real_embedding_model(
     assert all(len(p.vector["dense"]) == 384 for p in points)
     assert all(p.payload["embedding_model_version"] == "BAAI/bge-small-en-v1.5" for p in points)
     assert uuid.UUID(points[0].payload["chunk_id"])
+
+
+# ================================================================ Docling pipeline (slow)
+
+
+@pytest.fixture
+def docling_parser(runtime: WorkerRuntime, monkeypatch: pytest.MonkeyPatch) -> None:
+    docling = runtime.settings.model_copy(update={"pdf_pipeline": "docling"})
+    monkeypatch.setattr(runtime, "parser", SandboxedPdfParser(docling))
+
+
+@pytest.mark.docling
+async def test_docling_detects_layout_headings_the_text_heuristic_cannot_see(
+    client: httpx2.AsyncClient, docling_parser: None
+) -> None:
+    from evaluation.chunking.corpus import DOCS, build_pages, render_pdf
+
+    source = next(d for d in DOCS if d.name == "platform_guide")
+    headers = await new_user(client)
+    doc = await upload_and_wait(
+        client, headers, render_pdf(build_pages(source)), {"completed", "failed"}
+    )
+    assert doc["status"] == "completed", doc
+    assert doc["parser"] == "docling"
+    assert (doc["ocr_status"], doc["ocr_pages"]) == ("not_needed", 0)  # text PDF: no OCR at all
+    points = points_for(doc["id"])
+    paths = {p.payload["section_path"] for p in points}
+    # "Upload size limits" is a bold sentence-case heading: only layout analysis finds it
+    assert any("Upload size limits" in path for path in paths), paths
+    fact = next(p for p in points if "25 megabytes" in " ".join(p.payload["text"].split()))
+    assert "Upload size limits" in fact.payload["section_path"]
+    assert fact.payload["page_number"] >= 1
+
+
+@pytest.mark.docling
+async def test_docling_recovers_scanned_text_even_when_it_is_labelled_a_heading(
+    client: httpx2.AsyncClient, docling_parser: None
+) -> None:
+    headers = await new_user(client)
+    doc = await upload_and_wait(client, headers, scanned_pdf(), {"completed", "failed"})
+    assert doc["status"] == "completed", doc
+    assert (doc["parser"], doc["ocr_status"], doc["ocr_pages"]) == ("docling", "used", 1)
+    text_chunks = " ".join(p.payload["text"] for p in points_for(doc["id"])).upper()
+    assert "INVOICE" in text_chunks
+    assert "1250" in text_chunks
+
+
+@pytest.mark.docling
+async def test_docling_on_a_mixed_pdf_ocrs_only_because_a_page_needs_it(
+    client: httpx2.AsyncClient, docling_parser: None
+) -> None:
+    headers = await new_user(client)
+    doc = await upload_and_wait(client, headers, mixed_pdf(), {"completed", "failed"})
+    assert doc["status"] == "completed", doc
+    assert doc["page_count"] == 3
+    assert (doc["ocr_status"], doc["ocr_pages"]) == ("used", 1)
+    texts = " ".join(p.payload["text"] for p in points_for(doc["id"])).upper()
+    assert "QUARTERLY RESULTS" in texts
+    assert "INVOICE" in texts

@@ -64,6 +64,7 @@ def to_public(doc: Document, latest_job_id: uuid.UUID | None) -> DocumentPublic:
         status=doc.status,
         page_count=doc.page_count,
         chunk_count=doc.chunk_count,
+        parser=doc.parser,
         ocr_status=doc.ocr_status,
         ocr_pages=doc.ocr_pages,
         version=doc.version,

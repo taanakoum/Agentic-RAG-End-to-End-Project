@@ -118,3 +118,34 @@ def blank_pdf() -> bytes:
     buffer = io.BytesIO()
     writer.write(buffer)
     return buffer.getvalue()
+
+
+def mixed_pdf() -> bytes:
+    """Two real text pages followed by one scanned (image-only) page."""
+    from pypdf import PdfReader
+
+    writer = PdfWriter()
+    for source in (sample_text_pdf("mixed"), scanned_pdf()):
+        for page in PdfReader(io.BytesIO(source)).pages:
+            writer.add_page(page)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
+def sectioned_pdf(tag: str = "sect") -> bytes:
+    """Two pages, each a full-size section with its own heading (enough text for 2+ chunks)."""
+
+    def body(topic: str, n: int) -> str:
+        return "\n".join(
+            f"This sentence number {i} discusses {topic} and adds several more words to the page."
+            for i in range(n)
+        )
+
+    return make_pdf(
+        [
+            f"INTRODUCTION\n{body('the introduction', 9)}",
+            f"FINANCIAL SUMMARY\n{body('financial results', 9)}\n"
+            f"Reference code {tag} ends the page.",
+        ]
+    )
