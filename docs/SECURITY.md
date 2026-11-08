@@ -71,3 +71,11 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - Search is rate limited per user (`RL_SEARCH_LIMIT` per `RL_SEARCH_WINDOW_S`), fails closed if Redis is down, and bounded: query length, scope size, top-k, per-stage timeouts.
 - Retrieved text is untrusted input for the LLM (prompt-injection handling arrives with generation, Phase 6); search results never contain storage keys or user ids.
 - Known limit: the Qdrant filter lists the readable document ids; users with thousands of documents produce large filters (bounded by `RETRIEVAL_MAX_SCOPE_DOCUMENTS` only when the caller narrows). Revisit with a status payload field if this becomes a bottleneck.
+
+## Sessions, chat state and memory (Phase 5)
+- Every conversation, message, execution and memory query is scoped by the owning user; foreign and deleted ids return the same 404 as unknown ones (tested, mutation-checked). `thread_id` is never exposed.
+- Concurrency control is in the database (row lock, unique sequence, one running execution per conversation, per-conversation idempotency keys, leases): see ADR-023. Stale writers cannot overwrite answers or checkpoints.
+- Deletion removes messages, executions and LangGraph checkpoints; account deletion also removes memories and their vectors. Reconciliation republishes lost purges; an orphan-checkpoint sweep removes late writes.
+- Memory is opt-in (`memory_enabled` defaults to false), never retroactive, retention-limited, refuses obviously sensitive data (heuristic, ADR-025), is retrieved by relevance only, and every vector hit is re-validated against PostgreSQL. Users can view, edit, delete and reset their memories.
+- Rate limits: session creation, memory writes (per user), search (per user). Agent options are an allow-list (`mode`, `top_k`, `rerank`); system prompts, tools and model selection cannot be set by users.
+- Known limits: the memory sensitivity filter is heuristic; memory content is plain text in PostgreSQL (no field-level encryption); consolidation is rule-based until an LLM extractor is added (KI-026).

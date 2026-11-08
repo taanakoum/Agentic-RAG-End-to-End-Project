@@ -74,12 +74,14 @@ def _reset_vectors_and_objects() -> None:
     from qdrant_client import QdrantClient
 
     from app.ingestion.indexing import collection_name
+    from app.memory.index import collection as memory_collection
 
     settings = get_settings()
     client = QdrantClient(url=settings.qdrant_url, timeout=30)
     try:
-        if client.collection_exists(collection_name(settings)):
-            client.delete_collection(collection_name(settings))
+        for name in (collection_name(settings), memory_collection(settings)):
+            if client.collection_exists(name):
+                client.delete_collection(name)
     finally:
         client.close()
     root = settings.storage_local_root

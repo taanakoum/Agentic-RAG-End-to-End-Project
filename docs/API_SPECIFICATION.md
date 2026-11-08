@@ -73,3 +73,29 @@ Users, sessions/chat, memory, feedback, evaluation endpoints (see docs/spec/06-a
 
 Each result is citation-ready: `{chunk_id, document_id, document_name, page_number, page_end, section_path, heading, text, scores{dense_rank, sparse_rank, dense_score, sparse_score, fused_score, rerank_score}}`.
 The search covers only the caller's COMPLETED, non-deleted documents. `document_ids` narrows the scope; ids that are unknown, foreign or not completed are silently ignored (same response either way). `mode` is `hybrid_rerank` (or `hybrid` when `RERANK_ENABLED=false`). `degraded` lists handled soft failures: `dense_unavailable`, `sparse_unavailable`, `rerank_timeout`, `rerank_unavailable`.
+
+## Sessions (Phase 5; Bearer required, email must be verified when `REQUIRE_VERIFIED_EMAIL=true`)
+| Method | Path | Body / query | Success | Errors |
+|---|---|---|---|---|
+| POST | /sessions | `{title?, agent_config?{mode single\|multi, top_k 1-30, rerank}}` | 201 `{id, title, agent_config, message_count, created_at, updated_at}` | 401, 403, 422, 429 |
+| GET | /sessions | `limit` (1-100), `offset` | `{items, total, limit, offset}` newest activity first | 401, 403, 422 |
+| GET | /sessions/{id} | | session | 401, 403, 404 |
+| PATCH | /sessions/{id} | `{title?, agent_config?}` | session | 401, 403, 404, 422 |
+| DELETE | /sessions/{id} | | 202 `{conversation_id, status:"deleting"}`; hidden at once, purged by the worker | 401, 403, 404 |
+| GET | /sessions/{id}/messages | `after_seq`, `limit` (1-200) | `{items:[{id, seq, role, content, response, execution_id, created_at}], has_more}` | 401, 403, 404, 422 |
+
+Another user's session is a 404 identical to an unknown id. Agent options are limited to `mode`, `top_k`, `rerank` (unknown fields are rejected). `POST /chat` and `POST /chat/stream` arrive in Phase 6; their turn lifecycle (409 `CONCURRENCY_CONFLICT` while a turn is running, `Idempotency-Key` semantics, 409 `IDEMPOTENCY_KEY_REUSED`) is implemented and tested in `ChatTurnService`.
+
+## Memory and preferences (Bearer required; memory writes also need a verified email when required)
+| Method | Path | Body / query | Success | Errors |
+|---|---|---|---|---|
+| GET | /memory | `kind?`, `limit` (1-100), `offset` | `{items, total, limit, offset}` | 401, 403, 422 |
+| POST | /memory | `{content (<= MEMORY_MAX_CHARS), kind?, importance? 1-5}` | 201 memory | 409 duplicate, 422 (`sensitive_content`, `content_too_long`, `memory_limit_reached`), 429 |
+| PATCH | /memory/{id} | `{content?, kind?, importance?}` | memory (re-indexed when content or kind changed) | 404, 409, 422, 429 |
+| DELETE | /memory/{id} | | 204; hidden at once, vector and row removed by the worker | 404 |
+| POST | /memory/reset | `{confirm: true}` | 202 `{status:"resetting", memories}` | 422 |
+| POST | /memory/search | `{query, k?}` | `{results:[{memory, score}]}` relevant memories only | 422 |
+| GET | /users/me/preferences | | `{memory_enabled (default false), memory_retention_days (default 365)}` | 401 |
+| PATCH | /users/me/preferences | `{memory_enabled?, memory_retention_days? 1-3650}` | preferences | 401, 422 |
+
+`/memory/search` previews what the agent would see and ignores the consent switch; the agent path itself uses memory only when `memory_enabled` is true.

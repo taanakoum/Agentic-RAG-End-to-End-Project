@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 5 (Sessions + Memory). Phases 2, 3 and 4 VERIFIED (native). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
-**Next step:** (a) User installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1` to verify G1. (b) Phase 5: read docs/spec/05-agents-chat-memory.md (sessions, messages, Postgres checkpointer, same-thread locking, idempotency keys, memory). Start services first (`scripts/dev_services.ps1 start`).
+**Current phase:** 6 (Single-agent). Phases 2, 3, 4 and 5 VERIFIED (native). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
+**Next step:** (a) User installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1` to verify G1. (b) Phase 6: read docs/spec/05-agents-chat-memory.md (single-agent graph, RAGResponse, citation verification, SSE) and the rag-citation-and-response skill; use the ChatTurnService, RetrievalService, MemoryService.relevant and the Postgres checkpointer built in Phases 4-5. A model provider is needed (no paid calls in tests).
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -15,7 +15,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | 2 FastAPI + Auth | G2 | VERIFIED | Log entry 5 |
 | 3 Ingestion | G3 | VERIFIED (native; container-restart scenario pending Docker, KI-019) | Log entry 7 |
 | 4 Retrieval | G4 | VERIFIED (native) | Log entry 9; ADR-022 |
-| 5 Sessions + Memory | G5 | NOT_STARTED | |
+| 5 Sessions + Memory | G5 | VERIFIED (native) | Log entry 10; ADR-023..025 |
 | 6 Single-agent | G6 | NOT_STARTED | |
 | 7 Multi-agent | G7 | NOT_STARTED | |
 | 8 Eval + Observability | - | NOT_STARTED | |
@@ -49,9 +49,9 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | RAGResponse validation | NOT_STARTED | |
 | Citation verification | NOT_STARTED | |
 | SSE streaming | NOT_STARTED | |
-| Same-thread concurrency control | NOT_STARTED | |
-| Persistent sessions + PG checkpoints | NOT_STARTED | |
-| Persistent memory | NOT_STARTED | |
+| Same-thread concurrency control | VERIFIED (ChatTurnService; HTTP chat endpoints in Phase 6) | Log entry 10 |
+| Persistent sessions + PG checkpoints | VERIFIED (real LLM-free graph; agent graphs in Phase 6) | Log entry 10 |
+| Persistent memory | VERIFIED (rule-based consolidation; LLM extractor KI-026) | Log entry 10 |
 | Rate limiting | PARTIAL (auth endpoints only; LLM/upload limits pending) | Log entry 5 |
 | Centralized errors | TESTED (contract + handlers) | Log entry 5 |
 | Observability (OTel + LLM tracing) | NOT_STARTED | |

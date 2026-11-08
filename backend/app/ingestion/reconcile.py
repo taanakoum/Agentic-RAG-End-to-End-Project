@@ -11,15 +11,19 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.ingestion.outbox import (
+    KIND_INDEX_MEMORY,
     KIND_INGEST,
     KIND_PURGE,
     KIND_PURGE_CONVERSATION,
+    KIND_PURGE_MEMORY,
     KIND_PURGE_USER,
+    KIND_PURGE_USER_MEMORIES,
 )
 from app.ingestion.states import JobStatus
 from app.ingestion.store import IngestionStore, utcnow
 from app.models.chat import Conversation
 from app.models.document import Document, IngestionJob, OutboxEvent
+from app.models.memory import Memory
 from app.models.user import User
 
 log = get_logger(__name__)
@@ -33,6 +37,7 @@ class ReconcileReport:
     purges_requeued: int = 0
     user_purges_requeued: int = 0
     conversation_purges_requeued: int = 0
+    memory_events_requeued: int = 0
 
 
 def _recent_event_exists(
@@ -143,9 +148,53 @@ def reconcile(session: Session, settings: Settings) -> ReconcileReport:
             )
             conversation_purges += 1
 
+    # 6. memories: indexing that never finished, and deletions whose purge never finished
+    memory_events = 0
+    for memory_id, owner_id in session.execute(
+        select(Memory.id, Memory.user_id).where(
+            Memory.deleted_at.is_(None),
+            Memory.index_state == "pending",
+            Memory.updated_at < purge_cutoff,
+        )
+    ).all():
+        if not _recent_event_exists(
+            session, KIND_INDEX_MEMORY, "memory_id", str(memory_id), since=purge_cutoff
+        ):
+            store.add_outbox(
+                KIND_INDEX_MEMORY, {"memory_id": str(memory_id), "user_id": str(owner_id)}
+            )
+            memory_events += 1
+    for memory_id, owner_id in session.execute(
+        select(Memory.id, Memory.user_id).where(
+            Memory.deleted_at.is_not(None), Memory.deleted_at < purge_cutoff
+        )
+    ).all():
+        if not _recent_event_exists(
+            session, KIND_PURGE_MEMORY, "memory_id", str(memory_id), since=purge_cutoff
+        ) and not _recent_event_exists(
+            session, KIND_PURGE_USER_MEMORIES, "user_id", str(owner_id), since=purge_cutoff
+        ):
+            store.add_outbox(
+                KIND_PURGE_MEMORY, {"memory_id": str(memory_id), "user_id": str(owner_id)}
+            )
+            memory_events += 1
+
     pruned = prune_outbox(session)
-    report = ReconcileReport(queued, recovered, exhausted, purges, user_purges, conversation_purges)
-    if any((queued, recovered, exhausted, purges, user_purges, conversation_purges, pruned)):
+    report = ReconcileReport(
+        queued, recovered, exhausted, purges, user_purges, conversation_purges, memory_events
+    )
+    if any(
+        (
+            queued,
+            recovered,
+            exhausted,
+            purges,
+            user_purges,
+            conversation_purges,
+            memory_events,
+            pruned,
+        )
+    ):
         log.info(
             "reconciled",
             requeued_queued=queued,

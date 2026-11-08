@@ -19,7 +19,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         "agentic_rag",
         broker=settings.redis_url,
         backend=settings.redis_url,
-        include=["app.tasks.system", "app.tasks.ingestion", "app.tasks.chat"],
+        include=["app.tasks.system", "app.tasks.ingestion", "app.tasks.chat", "app.tasks.memory"],
     )
     app.conf.update(
         task_serializer="json",
@@ -50,6 +50,10 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "sweep-orphans": {
                 "task": "ingestion.sweep_orphans",
                 "schedule": settings.orphan_sweep_interval_s,
+            },
+            "memory-retention": {
+                "task": "memory.sweep_retention",
+                "schedule": settings.memory_retention_sweep_interval_s,
             },
             "sweep-checkpoints": {
                 "task": "chat.sweep_checkpoints",

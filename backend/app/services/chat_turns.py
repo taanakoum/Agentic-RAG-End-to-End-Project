@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +40,10 @@ from app.core.exceptions import (
     ResourceNotFoundError,
 )
 from app.core.logging import get_logger
-from app.models.chat import ChatExecution, Message
+from app.ingestion.outbox import KIND_CONSOLIDATE
+from app.models.chat import ChatExecution, Conversation, Message
+from app.models.document import OutboxEvent
+from app.models.memory import UserPreferences
 from app.repositories.conversations import ConversationRepository
 
 log = get_logger(__name__)
@@ -242,8 +245,37 @@ class ChatTurnService:
         locked.finished_at = now
         conversation.updated_at = now
         self._session.add(assistant)
+        await self._maybe_queue_consolidation(conversation)
         await self._session.commit()
         return assistant
+
+    async def _maybe_queue_consolidation(self, conversation: Conversation) -> None:
+        """Ask the worker to extract memories once enough new messages piled up (consent-gated)."""
+        if (
+            conversation.last_seq - conversation.memory_seq
+            < self._settings.memory_consolidate_every
+        ):
+            return
+        prefs = await self._session.get(UserPreferences, conversation.user_id)
+        if prefs is None or not prefs.memory_enabled:
+            return
+        key = str(conversation.id)
+        pending = await self._session.execute(
+            select(OutboxEvent.id)
+            .where(
+                OutboxEvent.kind == KIND_CONSOLIDATE,
+                OutboxEvent.sent_at.is_(None),
+                OutboxEvent.payload["conversation_id"].astext == key,
+            )
+            .limit(1)
+        )
+        if pending.first() is None:
+            self._session.add(
+                OutboxEvent(
+                    kind=KIND_CONSOLIDATE,
+                    payload={"conversation_id": key, "user_id": str(conversation.user_id)},
+                )
+            )
 
     async def fail(self, user_id: uuid.UUID, execution_id: uuid.UUID, *, error_code: str) -> bool:
         """Mark a running execution failed. Returns False if it was not running (already final)."""

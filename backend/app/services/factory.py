@@ -9,6 +9,7 @@ from app.services.account_service import AccountService
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
 from app.services.document_service import DocumentService
+from app.services.memory_service import MemoryService
 from app.services.mfa_service import MfaService
 from app.services.retrieval_service import RetrievalService
 
@@ -66,3 +67,13 @@ def build_retrieval_service(session: AsyncSession, infra: Infrastructure) -> Ret
 
 def build_conversation_service(session: AsyncSession, infra: Infrastructure) -> ConversationService:
     return ConversationService(session=session, settings=infra.settings, limiter=infra.rate_limiter)
+
+
+def build_memory_service(session: AsyncSession, infra: Infrastructure) -> MemoryService:
+    return MemoryService(
+        session=session,
+        settings=infra.settings,
+        limiter=infra.rate_limiter,
+        qdrant=infra.qdrant,
+        executor=infra.inference_executor,
+    )

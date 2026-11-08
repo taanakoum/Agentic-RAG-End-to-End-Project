@@ -20,9 +20,11 @@ from app.services.factory import (
     build_auth_service,
     build_conversation_service,
     build_document_service,
+    build_memory_service,
     build_mfa_service,
     build_retrieval_service,
 )
+from app.services.memory_service import MemoryService
 from app.services.mfa_service import MfaService
 from app.services.retrieval_service import RetrievalService
 
@@ -57,12 +59,17 @@ def get_conversation_service(session: SessionDep, infra: InfraDep) -> Conversati
     return build_conversation_service(session, infra)
 
 
+def get_memory_service(session: SessionDep, infra: InfraDep) -> MemoryService:
+    return build_memory_service(session, infra)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 MfaServiceDep = Annotated[MfaService, Depends(get_mfa_service)]
 RetrievalServiceDep = Annotated[RetrievalService, Depends(get_retrieval_service)]
 ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
+MemoryServiceDep = Annotated[MemoryService, Depends(get_memory_service)]
 
 
 def client_ip(request: Request) -> str:

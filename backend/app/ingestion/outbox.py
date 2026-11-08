@@ -18,6 +18,8 @@ KIND_PURGE_USER = "purge_user"
 KIND_PURGE_CONVERSATION = "purge_conversation"
 KIND_INDEX_MEMORY = "index_memory"
 KIND_PURGE_MEMORY = "purge_memory"
+KIND_PURGE_USER_MEMORIES = "purge_user_memories"
+KIND_CONSOLIDATE = "consolidate_conversation"
 
 TASK_BY_KIND = {
     KIND_INGEST: "ingestion.process_document",
@@ -26,6 +28,8 @@ TASK_BY_KIND = {
     KIND_PURGE_CONVERSATION: "chat.purge_conversation",
     KIND_INDEX_MEMORY: "memory.index_memory",
     KIND_PURGE_MEMORY: "memory.purge_memory",
+    KIND_PURGE_USER_MEMORIES: "memory.purge_user_memories",
+    KIND_CONSOLIDATE: "memory.consolidate_conversation",
 }
 
 
@@ -36,6 +40,10 @@ def _args_for(event: OutboxEvent) -> list[str]:
     if event.kind == KIND_PURGE_USER:
         return [str(payload["user_id"])]
     if event.kind == KIND_PURGE_CONVERSATION:
+        return [str(payload["conversation_id"]), str(payload["user_id"])]
+    if event.kind == KIND_PURGE_USER_MEMORIES:
+        return [str(payload["user_id"])]
+    if event.kind == KIND_CONSOLIDATE:
         return [str(payload["conversation_id"]), str(payload["user_id"])]
     if event.kind in (KIND_INDEX_MEMORY, KIND_PURGE_MEMORY):
         return [str(payload["memory_id"]), str(payload["user_id"])]

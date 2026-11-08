@@ -26,6 +26,9 @@ os.environ["JWT_SECRET"] = "test-only-jwt-secret-not-used-anywhere-else-01234567
 # Cheap Argon2 parameters keep the suite fast; the prod validator still enforces OWASP minimums.
 os.environ["MFA_ENCRYPTION_KEY"] = "dGVzdC1vbmx5LWZlcm5ldC1rZXktMzItYnl0ZXMhISE="
 os.environ["EMAIL_FILE_DIR"] = str(_TMP_ROOT / "outbox")
+# the deterministic HashEmbedder has its own score scale; the real default (0.6) is calibrated
+# for the real model in evaluation/memory/calibrate.py and tested in the real_model test
+os.environ["MEMORY_MIN_SCORE"] = "0.5"
 os.environ["PDF_PIPELINE"] = "light"  # fast; Docling is exercised by dedicated tests
 os.environ["INGESTION_MAX_ATTEMPTS"] = "3"
 os.environ["INGESTION_RETRY_BASE_S"] = "0.05"

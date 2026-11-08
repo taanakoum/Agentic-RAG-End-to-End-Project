@@ -192,6 +192,18 @@ class Settings(BaseSettings):
     rl_session_create_limit: int = Field(default=120, ge=1)
     rl_session_create_window_s: int = Field(default=3600, ge=1)
     checkpoint_pool_size: int = Field(default=10, ge=1, le=100)
+    # Long-term memory
+    qdrant_memories_collection: str = "memories"
+    # calibrated with the real model (evaluation/reports/memory_threshold.md): 0.60 retrieves
+    # 94% of relevant memories and 0% for unrelated queries; 0.50 would surface noise for 56%
+    memory_min_score: float = Field(default=0.6, ge=0.0, le=1.0)
+    memory_search_k: int = Field(default=5, ge=1, le=20)
+    memory_max_per_user: int = Field(default=500, ge=1)
+    memory_max_chars: int = Field(default=500, ge=20, le=5000)
+    memory_consolidate_every: int = Field(default=6, ge=2)  # unconsolidated messages
+    memory_retention_sweep_interval_s: float = Field(default=3600.0, ge=10.0)
+    rl_memory_write_limit: int = Field(default=120, ge=1)
+    rl_memory_write_window_s: int = Field(default=3600, ge=1)
     rl_search_limit: int = Field(default=120, ge=1)
     rl_search_window_s: int = Field(default=60, ge=1)
     outbox_batch_size: int = Field(default=50, ge=1, le=500)

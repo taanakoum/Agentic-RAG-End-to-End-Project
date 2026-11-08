@@ -11,6 +11,7 @@ from app.core.logging import get_logger
 from app.ingestion.indexing import delete_document_points, delete_user_points
 from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.store import IngestionStore
+from app.memory.index import delete_user_vectors
 from app.models.chat import Conversation
 
 log = get_logger(__name__)
@@ -62,6 +63,7 @@ def purge_user(rt: WorkerRuntime, user_id: uuid.UUID) -> str:
         if IngestionStore(session).has_processing_job_for_user(user_id):
             raise PurgeBusyError(str(user_id))
         delete_user_points(rt.qdrant, rt.settings, user_id=user_id)
+        delete_user_vectors(rt.qdrant, rt.settings, user_id=user_id)
         rt.storage.delete_prefix(str(user_id))
         threads = list(
             session.execute(

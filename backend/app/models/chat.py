@@ -80,6 +80,8 @@ class Conversation(Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    # highest message seq already examined by memory consolidation
+    memory_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
