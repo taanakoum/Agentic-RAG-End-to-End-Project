@@ -11,14 +11,20 @@ Supervisor-based LangGraph. Roles (adjust only if simpler is demonstrably better
 ```python
 class Citation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    document_id: str; document_name: str
+    document_id: str
+    document_name: str
     page_number: int | None = None
-    chunk_id: str; excerpt: str
+    chunk_id: str
+    excerpt: str
+
 
 class AgentMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    execution_mode: Literal["single","multi"]
-    model_name: str; retrieval_used: bool; reranking_used: bool
+    execution_mode: Literal["single", "multi"]
+    model_name: str
+    retrieval_used: bool
+    reranking_used: bool
+
 
 class RAGResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
