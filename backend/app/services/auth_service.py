@@ -24,6 +24,7 @@ from app.core.security import (
     PasswordService,
     TokenError,
     create_access_token,
+    create_mfa_token,
     decode_access_token,
     generate_opaque_token,
     hash_opaque_token,
@@ -32,6 +33,7 @@ from app.core.security import (
 )
 from app.infra.rate_limit import RateLimiter, subject_key
 from app.models.user import User
+from app.repositories.account import MfaRepository
 from app.repositories.refresh_tokens import RefreshTokenRepository, SessionRow
 from app.repositories.users import UserRepository
 
@@ -51,6 +53,14 @@ _PASSWORD_MESSAGES = {
 class IssuedTokens:
     access_token: str
     refresh_token: str
+    expires_in: int
+
+
+@dataclass(frozen=True, slots=True)
+class MfaChallenge:
+    """Password was correct but the account requires a second factor."""
+
+    mfa_token: str
     expires_in: int
 
 
@@ -145,7 +155,7 @@ class AuthService:
 
     async def login(
         self, *, email: str, password: str, client_ip: str, user_agent: str | None
-    ) -> IssuedTokens:
+    ) -> IssuedTokens | MfaChallenge:
         s = self._settings
         await self._limiter.hit(
             "login_ip",
@@ -173,7 +183,15 @@ class AuthService:
         await self._limiter.reset("login_account", account_subject)
         if self._passwords.needs_rehash(user.password_hash):
             user.password_hash = await self._passwords.hash(password)
-        tokens = await self._issue(user.id, family_id=uuid.uuid4(), user_agent=user_agent)
+        mfa = await MfaRepository(self._session).get(user.id)
+        if mfa is not None and mfa.confirmed_at is not None:
+            await self._session.commit()  # persists a possible rehash
+            log.info("login_mfa_required", user_id=str(user.id))
+            return MfaChallenge(
+                mfa_token=create_mfa_token(s, user_id=user.id, now=self._clock()),
+                expires_in=s.mfa_token_ttl_s,
+            )
+        tokens = await self.issue_session(user.id, user_agent=user_agent)
         await self._session.commit()
         log.info("login_succeeded", user_id=str(user.id))
         return tokens
@@ -186,6 +204,14 @@ class AuthService:
     @staticmethod
     def _invalid_credentials() -> AuthenticationError:
         return AuthenticationError("Invalid email or password.", code="INVALID_CREDENTIALS")
+
+    async def issue_session(
+        self, user_id: uuid.UUID, *, user_agent: str | None, family_id: uuid.UUID | None = None
+    ) -> IssuedTokens:
+        """Create a (new or continued) session. The caller owns the commit."""
+        return await self._issue(
+            user_id, family_id=family_id or uuid.uuid4(), user_agent=user_agent
+        )
 
     async def _issue(
         self, user_id: uuid.UUID, *, family_id: uuid.UUID, user_agent: str | None

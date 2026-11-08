@@ -42,6 +42,8 @@ async def _clean_state(infra: Infrastructure) -> None:
         await session.execute(text("TRUNCATE users CASCADE"))
         await session.commit()
     await delete_keys(infra.redis, "rl:*")
+    for eml in get_settings().email_file_dir.glob("*.eml"):
+        eml.unlink()
 
 
 def build_app(settings: Settings, infra: Infrastructure) -> FastAPI:

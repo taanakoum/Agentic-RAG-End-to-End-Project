@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
+from cryptography.fernet import Fernet
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
@@ -58,6 +59,9 @@ class Settings(BaseSettings):
 
     # Auth
     jwt_secret: SecretStr = SecretStr("")
+    jwt_key_id: str = Field(default="k1", pattern=r"^[A-Za-z0-9._-]{1,32}$")
+    # kid -> secret of retired signing keys: still accepted for verification, never used to sign.
+    jwt_retired_keys: dict[str, SecretStr] = Field(default_factory=dict)
     jwt_issuer: str = "agentic-rag"
     jwt_audience: str = "agentic-rag-api"
     access_token_ttl_s: int = Field(default=900, ge=60, le=3600)
@@ -69,6 +73,25 @@ class Settings(BaseSettings):
     argon2_parallelism: int = Field(default=4, ge=1, le=64)
     max_concurrent_hashes: int = Field(default=4, ge=1, le=64)
 
+    # One-time tokens, email, MFA
+    reset_token_ttl_s: int = Field(default=3600, ge=60)
+    verify_token_ttl_s: int = Field(default=24 * 3600, ge=60)
+    app_base_url: str = "http://localhost:8501"
+    email_backend: Literal["file", "smtp"] = "file"
+    email_from: str = "no-reply@agentic-rag.local"
+    email_file_dir: Path = REPO_ROOT / "data" / "outbox"
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_starttls: bool = True
+    smtp_use_ssl: bool = False
+    smtp_timeout_s: float = Field(default=10.0, gt=0)
+    mfa_encryption_key: SecretStr = SecretStr("")
+    mfa_issuer: str = "Agentic RAG"
+    mfa_token_ttl_s: int = Field(default=300, ge=60, le=900)
+    mfa_recovery_code_count: int = Field(default=10, ge=4, le=20)
+
     # Rate limits (Redis). Fixed windows; limit = requests allowed per window.
     rl_login_ip_limit: int = Field(default=20, ge=1)
     rl_login_ip_window_s: int = Field(default=60, ge=1)
@@ -78,6 +101,16 @@ class Settings(BaseSettings):
     rl_register_ip_window_s: int = Field(default=3600, ge=1)
     rl_refresh_ip_limit: int = Field(default=60, ge=1)
     rl_refresh_ip_window_s: int = Field(default=60, ge=1)
+    rl_forgot_ip_limit: int = Field(default=10, ge=1)
+    rl_forgot_ip_window_s: int = Field(default=3600, ge=1)
+    rl_forgot_account_limit: int = Field(default=3, ge=1)
+    rl_forgot_account_window_s: int = Field(default=3600, ge=1)
+    rl_reset_ip_limit: int = Field(default=10, ge=1)
+    rl_reset_ip_window_s: int = Field(default=3600, ge=1)
+    rl_mfa_limit: int = Field(default=5, ge=1)
+    rl_mfa_window_s: int = Field(default=300, ge=1)
+    rl_pwchange_limit: int = Field(default=5, ge=1)
+    rl_pwchange_window_s: int = Field(default=900, ge=1)
 
     # HTTP
     max_body_bytes: int = Field(default=1024 * 1024, ge=1024)
@@ -95,7 +128,20 @@ class Settings(BaseSettings):
             raise ValueError("celery_task_soft_time_limit_s must be < celery_task_time_limit_s")
         if len(self.jwt_secret.get_secret_value()) < 32:
             raise ValueError("jwt_secret must be set and at least 32 characters")
+        retired = self.jwt_retired_keys
+        if self.jwt_key_id in retired:
+            raise ValueError("jwt_retired_keys must not contain the active jwt_key_id")
+        if any(len(v.get_secret_value()) < 32 for v in retired.values()):
+            raise ValueError("every retired jwt key must be at least 32 characters")
+        try:
+            Fernet(self.mfa_encryption_key.get_secret_value().encode())
+        except (ValueError, TypeError) as exc:
+            raise ValueError("mfa_encryption_key must be a valid Fernet key") from exc
+        if self.smtp_use_ssl and self.smtp_starttls:
+            raise ValueError("smtp_use_ssl and smtp_starttls are mutually exclusive")
         if self.app_env == "prod":
+            if self.email_backend != "smtp" or not self.smtp_host:
+                raise ValueError("prod requires email_backend=smtp and smtp_host")
             if self.argon2_memory_kib < 19456 or self.argon2_time_cost < 2:
                 raise ValueError("argon2 parameters are below the OWASP minimum for prod")
             if self.postgres_password.get_secret_value().lower() in _INSECURE_PASSWORDS:

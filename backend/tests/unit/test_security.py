@@ -32,6 +32,7 @@ def settings() -> Settings:
     return Settings.build(
         app_env="dev",
         jwt_secret="s" * 48,
+        mfa_encryption_key="dGVzdC1vbmx5LWZlcm5ldC1rZXktMzItYnl0ZXMhISE=",
         argon2_memory_kib=8192,
         argon2_time_cost=1,
         argon2_parallelism=1,

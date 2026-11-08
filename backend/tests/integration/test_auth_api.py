@@ -71,7 +71,8 @@ async def test_register_ok_and_no_secret_leak(
     resp = await register(client, "Alice@Example.com", display_name="  Alice  ")
     assert resp.status_code == 201
     body = resp.json()
-    assert set(body) == {"id", "email", "display_name", "created_at"}
+    assert set(body) == {"id", "email", "display_name", "email_verified", "created_at"}
+    assert body["email_verified"] is False
     assert body["email"] == "Alice@Example.com"
     assert body["display_name"] == "Alice"
     assert "password" not in resp.text.lower()

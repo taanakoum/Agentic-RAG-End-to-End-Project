@@ -1,5 +1,5 @@
 # UNVERIFIED: never run (Docker is not installed on the dev machine; see KNOWN_ISSUES KI-003).
-# Usage: cp env.example .env  (set COMPOSE_POSTGRES_PASSWORD), then: docker compose up --build
+# Usage: cp .env.example .env  (set COMPOSE_POSTGRES_PASSWORD), then: docker compose up --build
 name: agentic-rag
 
 x-backend-env: &backend-env

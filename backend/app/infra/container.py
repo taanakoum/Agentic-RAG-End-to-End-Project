@@ -15,6 +15,7 @@ from app.core.config import Settings
 from app.core.security import PasswordService
 from app.database.session import async_session_factory, create_async_db_engine
 from app.infra.clients import create_async_qdrant, create_async_redis
+from app.infra.email import EmailSender, create_email_sender
 from app.infra.rate_limit import RateLimiter
 from app.storage.base import ObjectStorage
 from app.storage.factory import create_storage
@@ -30,6 +31,7 @@ class Infrastructure:
     storage: ObjectStorage
     passwords: PasswordService
     rate_limiter: RateLimiter
+    email: EmailSender
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
@@ -44,6 +46,7 @@ class Infrastructure:
             storage=create_storage(settings),
             passwords=PasswordService(settings),
             rate_limiter=RateLimiter(redis),
+            email=create_email_sender(settings),
         )
 
     async def close(self) -> None:

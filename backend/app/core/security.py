@@ -123,10 +123,11 @@ def hash_opaque_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-# ---------------------------------------------------------------- JWT
+# ---------------------------------------------------------------- JWT (with key rotation)
 
 _ALGORITHM = "HS256"
-_REQUIRED_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "type", "sid", "jti"]
+_ACCESS_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "type", "sid", "jti"]
+_MFA_CLAIMS = ["exp", "iat", "iss", "aud", "sub", "type", "jti"]
 
 
 class TokenError(Exception):
@@ -140,6 +141,66 @@ class AccessClaims:
     expires_at: datetime
 
 
+def _signing_keys(settings: Settings) -> dict[str, str]:
+    """kid -> secret for every key that may VERIFY tokens (active first, then retired)."""
+    keys = {settings.jwt_key_id: settings.jwt_secret.get_secret_value()}
+    for kid, secret in settings.jwt_retired_keys.items():
+        keys.setdefault(kid, secret.get_secret_value())
+    return keys
+
+
+def _encode(settings: Settings, payload: dict[str, Any]) -> str:
+    # PyJWT's key type aliases resolve to Unknown without the optional `cryptography` extra.
+    return jwt.encode(  # pyright: ignore[reportUnknownMemberType]
+        payload,
+        settings.jwt_secret.get_secret_value(),
+        algorithm=_ALGORITHM,
+        headers={"kid": settings.jwt_key_id},
+    )
+
+
+def _decode(settings: Settings, token: str, *, required: list[str]) -> dict[str, Any]:
+    """Verify with the key named by the `kid` header (HS256 only). Raises TokenError."""
+    try:
+        header: dict[str, Any] = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        keys = _signing_keys(settings)
+        if kid is None:
+            # Tokens minted before key ids existed: verify with the active key only.
+            key = settings.jwt_secret.get_secret_value()
+        elif isinstance(kid, str) and kid in keys:
+            key = keys[kid]
+        else:
+            raise TokenError("unknown key id")
+        payload: dict[str, Any] = jwt.decode(  # pyright: ignore[reportUnknownMemberType]
+            token,
+            key,
+            algorithms=[_ALGORITHM],
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
+            options={"require": required, "verify_iat": True},
+        )
+        return payload
+    except TokenError:
+        raise
+    except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:
+        raise TokenError("invalid token") from exc
+
+
+def _base_claims(
+    settings: Settings, *, subject: uuid.UUID, claim_type: str, issued: datetime, ttl: timedelta
+) -> dict[str, Any]:
+    return {
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "sub": str(subject),
+        "type": claim_type,
+        "jti": uuid.uuid4().hex,
+        "iat": int(issued.timestamp()),
+        "exp": int((issued + ttl).timestamp()),
+    }
+
+
 def create_access_token(
     settings: Settings,
     *,
@@ -149,35 +210,21 @@ def create_access_token(
     ttl: timedelta | None = None,
     claim_type: str = "access",
 ) -> str:
-    issued = now or datetime.now(UTC)
-    expires = issued + (ttl if ttl is not None else timedelta(seconds=settings.access_token_ttl_s))
-    payload: dict[str, Any] = {
-        "iss": settings.jwt_issuer,
-        "aud": settings.jwt_audience,
-        "sub": str(user_id),
-        "sid": str(session_id),
-        "type": claim_type,
-        "jti": uuid.uuid4().hex,
-        "iat": int(issued.timestamp()),
-        "exp": int(expires.timestamp()),
-    }
-    # PyJWT's key type aliases resolve to Unknown without the optional `cryptography` extra.
-    return jwt.encode(  # pyright: ignore[reportUnknownMemberType]
-        payload, settings.jwt_secret.get_secret_value(), algorithm=_ALGORITHM
+    payload = _base_claims(
+        settings,
+        subject=user_id,
+        claim_type=claim_type,
+        issued=now or datetime.now(UTC),
+        ttl=ttl if ttl is not None else timedelta(seconds=settings.access_token_ttl_s),
     )
+    payload["sid"] = str(session_id)
+    return _encode(settings, payload)
 
 
 def decode_access_token(settings: Settings, token: str) -> AccessClaims:
-    """Validate signature (HS256 only), exp/iat/iss/aud, required claims and token type."""
+    """Validate signature (HS256 + known kid), exp/iat/iss/aud, required claims, type."""
     try:
-        payload: dict[str, Any] = jwt.decode(  # pyright: ignore[reportUnknownMemberType]
-            token,
-            settings.jwt_secret.get_secret_value(),
-            algorithms=[_ALGORITHM],
-            issuer=settings.jwt_issuer,
-            audience=settings.jwt_audience,
-            options={"require": _REQUIRED_CLAIMS, "verify_iat": True},
-        )
+        payload = _decode(settings, token, required=_ACCESS_CLAIMS)
         if payload["type"] != "access":
             raise TokenError("wrong token type")
         return AccessClaims(
@@ -187,5 +234,29 @@ def decode_access_token(settings: Settings, token: str) -> AccessClaims:
         )
     except TokenError:
         raise
-    except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:
+    except (ValueError, TypeError, KeyError) as exc:
+        raise TokenError("invalid token") from exc
+
+
+def create_mfa_token(settings: Settings, *, user_id: uuid.UUID, now: datetime | None = None) -> str:
+    """Short-lived proof that the password step succeeded; only usable at /auth/mfa/verify."""
+    payload = _base_claims(
+        settings,
+        subject=user_id,
+        claim_type="mfa",
+        issued=now or datetime.now(UTC),
+        ttl=timedelta(seconds=settings.mfa_token_ttl_s),
+    )
+    return _encode(settings, payload)
+
+
+def decode_mfa_token(settings: Settings, token: str) -> uuid.UUID:
+    try:
+        payload = _decode(settings, token, required=_MFA_CLAIMS)
+        if payload["type"] != "mfa":
+            raise TokenError("wrong token type")
+        return uuid.UUID(str(payload["sub"]))
+    except TokenError:
+        raise
+    except (ValueError, TypeError, KeyError) as exc:
         raise TokenError("invalid token") from exc

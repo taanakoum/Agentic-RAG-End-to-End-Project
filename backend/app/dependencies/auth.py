@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import AuthenticationError
 from app.dependencies.infra import get_db_session, get_infra
 from app.infra.container import Infrastructure
+from app.services.account_service import AccountService
 from app.services.auth_service import AuthenticatedUser, AuthService
+from app.services.factory import build_account_service, build_auth_service, build_mfa_service
+from app.services.mfa_service import MfaService
 
 # auto_error=False so that a missing header yields our standard 401 error body.
 _bearer = HTTPBearer(auto_error=False)
@@ -21,15 +24,20 @@ InfraDep = Annotated[Infrastructure, Depends(get_infra)]
 
 
 def get_auth_service(session: SessionDep, infra: InfraDep) -> AuthService:
-    return AuthService(
-        session=session,
-        settings=infra.settings,
-        passwords=infra.passwords,
-        limiter=infra.rate_limiter,
-    )
+    return build_auth_service(session, infra)
+
+
+def get_account_service(session: SessionDep, infra: InfraDep) -> AccountService:
+    return build_account_service(session, infra)
+
+
+def get_mfa_service(session: SessionDep, infra: InfraDep) -> MfaService:
+    return build_mfa_service(session, infra)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
+MfaServiceDep = Annotated[MfaService, Depends(get_mfa_service)]
 
 
 def client_ip(request: Request) -> str:

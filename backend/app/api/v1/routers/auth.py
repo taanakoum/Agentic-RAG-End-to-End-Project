@@ -5,12 +5,13 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Response, status
+from fastapi import APIRouter, BackgroundTasks, Header, Response, status
 
 from app.core.exceptions import error_responses
-from app.dependencies.auth import AuthServiceDep, ClientIpDep, CurrentUser
+from app.dependencies.auth import AuthServiceDep, ClientIpDep, CurrentUser, InfraDep
 from app.schemas.auth import (
     LoginRequest,
+    LoginResponse,
     LogoutRequest,
     RefreshRequest,
     RegisterRequest,
@@ -18,6 +19,8 @@ from app.schemas.auth import (
     TokenResponse,
     UserPublic,
 )
+from app.services.auth_service import MfaChallenge
+from app.services.background import send_verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -30,21 +33,32 @@ UserAgent = Annotated[str | None, Header(alias="User-Agent")]
     status_code=status.HTTP_201_CREATED,
     responses=error_responses(409, 422, 429, 503),
 )
-async def register(body: RegisterRequest, service: AuthServiceDep, ip: ClientIpDep) -> UserPublic:
+async def register(
+    body: RegisterRequest,
+    service: AuthServiceDep,
+    ip: ClientIpDep,
+    infra: InfraDep,
+    background: BackgroundTasks,
+) -> UserPublic:
     user = await service.register(
         email=body.email, password=body.password, display_name=body.display_name, client_ip=ip
     )
+    background.add_task(send_verification_email, infra, user.id)
     return UserPublic.model_validate(user)
 
 
-@router.post("/login", response_model=TokenResponse, responses=error_responses(401, 422, 429, 503))
+@router.post("/login", response_model=LoginResponse, responses=error_responses(401, 422, 429, 503))
 async def login(
     body: LoginRequest, service: AuthServiceDep, ip: ClientIpDep, user_agent: UserAgent = None
-) -> TokenResponse:
+) -> LoginResponse:
     tokens = await service.login(
         email=body.email, password=body.password, client_ip=ip, user_agent=user_agent
     )
-    return TokenResponse(
+    if isinstance(tokens, MfaChallenge):
+        return LoginResponse(
+            mfa_required=True, mfa_token=tokens.mfa_token, expires_in=tokens.expires_in
+        )
+    return LoginResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
         expires_in=tokens.expires_in,

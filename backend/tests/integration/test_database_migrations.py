@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.pool import QueuePool
 
@@ -22,6 +23,10 @@ ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 def _cfg() -> Config:
     return Config(str(ALEMBIC_INI))
+
+
+def _head() -> str | None:
+    return ScriptDirectory.from_config(_cfg()).get_current_head()
 
 
 def _current_version() -> str | None:
@@ -66,7 +71,7 @@ def test_migrations_upgrade_downgrade_upgrade() -> None:
     command.downgrade(_cfg(), "base")
     assert _current_version() is None or _current_version() == ""
     command.upgrade(_cfg(), "head")
-    assert _current_version() == "0002"
+    assert _current_version() == _head()
     command.downgrade(_cfg(), "base")
     command.upgrade(_cfg(), "head")
-    assert _current_version() == "0002"
+    assert _current_version() == _head()

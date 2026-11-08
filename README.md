@@ -11,7 +11,7 @@ uv sync                                                           # Python 3.13,
 powershell -File scripts/dev_services.ps1 start                   # PostgreSQL, Redis, Qdrant (status|stop)
 uv run --no-sync alembic -c backend/alembic.ini upgrade head      # migrations (uses .env / rag_dev)
 ```
-Copy `env.example` to `.env` and fill in values (`.env` is gitignored).
+Copy `.env.example` to `.env` and fill in values (`.env` is gitignored).
 
 Run the API and a worker (Windows needs `--pool=solo`; Linux/Docker uses the default prefork pool):
 ```powershell

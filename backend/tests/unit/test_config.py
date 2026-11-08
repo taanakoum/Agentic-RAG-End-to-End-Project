@@ -10,6 +10,7 @@ from app.core.config import Settings
 
 def make(**overrides: Any) -> Settings:
     overrides.setdefault("jwt_secret", "x" * 40)
+    overrides.setdefault("mfa_encryption_key", "dGVzdC1vbmx5LWZlcm5ldC1rZXktMzItYnl0ZXMhISE=")
     return Settings.build(**overrides)
 
 
@@ -52,6 +53,8 @@ def test_prod_ok_with_strong_secret() -> None:
         log_json=True,
         argon2_memory_kib=65536,
         argon2_time_cost=3,
+        email_backend="smtp",
+        smtp_host="smtp.example.com",
     )
     assert s.app_env == "prod"
 
@@ -92,3 +95,34 @@ def test_prod_rejects_weak_argon2_parameters() -> None:
 
 def test_jwt_secret_not_in_repr() -> None:
     assert "x" * 40 not in repr(make())
+
+
+def test_prod_requires_smtp_email_backend() -> None:
+    with pytest.raises(ValidationError):
+        make(
+            app_env="prod",
+            postgres_password="a-long-unique-secret",
+            log_json=True,
+            argon2_memory_kib=65536,
+            argon2_time_cost=3,
+        )
+
+
+def test_retired_jwt_key_validation() -> None:
+    ok = make(jwt_key_id="k2", jwt_retired_keys={"k1": "o" * 40})
+    assert set(ok.jwt_retired_keys) == {"k1"}
+    with pytest.raises(ValidationError):
+        make(jwt_key_id="k1", jwt_retired_keys={"k1": "o" * 40})  # active kid cannot be retired
+    with pytest.raises(ValidationError):
+        make(jwt_key_id="k2", jwt_retired_keys={"k1": "short"})
+
+
+def test_mfa_key_must_be_valid_fernet_key() -> None:
+    for bad in ("", "not-base64!", "c2hvcnQ="):
+        with pytest.raises(ValidationError):
+            make(mfa_encryption_key=bad)
+
+
+def test_smtp_ssl_and_starttls_are_exclusive() -> None:
+    with pytest.raises(ValidationError):
+        make(smtp_use_ssl=True, smtp_starttls=True)

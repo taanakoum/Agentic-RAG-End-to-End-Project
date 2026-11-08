@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -36,3 +37,15 @@ class UserRepository:
             select(User).where(User.email_normalized == email_normalized)
         )
         return result.scalar_one_or_none()
+
+    async def set_password_hash(self, user_id: uuid.UUID, password_hash: str) -> None:
+        await self._session.execute(
+            update(User).where(User.id == user_id).values(password_hash=password_hash)
+        )
+
+    async def mark_email_verified(self, user_id: uuid.UUID, *, now: datetime) -> None:
+        await self._session.execute(
+            update(User)
+            .where(User.id == user_id, User.email_verified_at.is_(None))
+            .values(email_verified_at=now)
+        )

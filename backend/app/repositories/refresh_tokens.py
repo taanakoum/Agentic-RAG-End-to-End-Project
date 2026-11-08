@@ -101,3 +101,20 @@ class RefreshTokenRepository:
             .order_by(func.max(RefreshToken.issued_at).desc())
         )
         return [SessionRow(r[0], r[1], r[2], r[3]) for r in rows.all()]
+
+    async def revoke_all_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        reason: str,
+        now: datetime,
+        keep_family: uuid.UUID | None = None,
+    ) -> int:
+        """Revoke every live session of a user (optionally sparing one family)."""
+        stmt = update(RefreshToken).where(
+            RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)
+        )
+        if keep_family is not None:
+            stmt = stmt.where(RefreshToken.family_id != keep_family)
+        result = await self._session.execute(stmt.values(revoked_at=now, revoked_reason=reason))
+        return int(getattr(result, "rowcount", 0) or 0)
