@@ -13,4 +13,6 @@ Never delete entries; mark resolved with date and how.
 | KI-007 | Deferred | S3-compatible storage adapter not implemented (only local volume). Needed for hosted deploy (Phase 12). | OPEN | |
 | KI-008 | Env | Celery worker logs `AttributeError: 'NoneType' object has no attribute 'connection_errors'` (kombu `ignore_errors` during Gossip restart) when Redis restarts. Worker reconnects and processes tasks afterwards (verified). Upstream noise, not fixed. | OPEN | Re-check on Celery/kombu upgrades |
 | KI-009 | Env | Docker artifacts (backend/Dockerfile, docker-compose.yml) are written but NEVER built or run. Only YAML syntax was parsed. | OPEN | Verify when Docker is available (G1) |
-
+| KI-010 | Env | Tesseract (OCR) is not installed natively; scanned-PDF handling needs it (Phase 3). The Docker worker image would include it but is unverifiable (KI-003). | OPEN | Install Tesseract in user space for native dev, or defer OCR tests to Docker |
+| KI-011 | Limitation | Auth: no password change/reset, email verification, account deletion, MFA, JWT key rotation, breached-password check (see docs/SECURITY.md). | OPEN | |
+| KI-012 | Limitation | Rate limits are fixed windows (2x boundary bursts) and per-account lockout allows deliberate victim lockout; a Redis outage makes auth return 503 (fail closed, ADR-008). | OPEN | Accepted trade-offs; revisit in Phase 10 |

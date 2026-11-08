@@ -9,6 +9,7 @@ from app.core.config import Settings
 
 
 def make(**overrides: Any) -> Settings:
+    overrides.setdefault("jwt_secret", "x" * 40)
     return Settings.build(**overrides)
 
 
@@ -45,7 +46,13 @@ def test_prod_requires_json_logs() -> None:
 
 
 def test_prod_ok_with_strong_secret() -> None:
-    s = make(app_env="prod", postgres_password="a-long-unique-secret", log_json=True)
+    s = make(
+        app_env="prod",
+        postgres_password="a-long-unique-secret",
+        log_json=True,
+        argon2_memory_kib=65536,
+        argon2_time_cost=3,
+    )
     assert s.app_env == "prod"
 
 
@@ -64,3 +71,24 @@ def test_collection_prefix() -> None:
     assert make(app_env="dev", qdrant_collection_prefix="test_").collection_name("chunks") == (
         "test_chunks"
     )
+
+
+@pytest.mark.parametrize("secret", ["", "short", "x" * 31])
+def test_jwt_secret_required_and_long_enough(secret: str) -> None:
+    with pytest.raises(ValidationError):
+        make(jwt_secret=secret)
+
+
+def test_prod_rejects_weak_argon2_parameters() -> None:
+    with pytest.raises(ValidationError):
+        make(
+            app_env="prod",
+            postgres_password="a-long-unique-secret",
+            log_json=True,
+            argon2_memory_kib=8192,
+            argon2_time_cost=1,
+        )
+
+
+def test_jwt_secret_not_in_repr() -> None:
+    assert "x" * 40 not in repr(make())

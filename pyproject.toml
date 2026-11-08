@@ -16,6 +16,9 @@ dependencies = [
     "redis==8.1.0",
     "qdrant-client==1.20.0",
     "structlog==26.1.0",
+    "argon2-cffi==25.1.0",
+    "pyjwt==2.15.1",
+    "email-validator==2.3.0",
 ]
 
 [dependency-groups]
@@ -51,7 +54,7 @@ extend-exclude = ["backend/migrations/versions", ".claude", "docs"]
 select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/tests/**" = ["S101", "S105", "S106"]  # asserts and obviously-fake test secrets
+"backend/tests/**" = ["S101", "S105", "S106", "RUF001"]  # asserts, fake secrets, intentional Unicode inputs
 
 [tool.pyright]
 include = ["backend"]

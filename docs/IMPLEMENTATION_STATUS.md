@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 2 (FastAPI + Auth). Phase 1 TESTED on native services; G1 still BLOCKED on Docker (KI-003, ADR-006)
-**Next step:** Phase 2: read docs/spec/02-auth-security.md and 06-api-errors-frontend.md; start services (`scripts/dev_services.ps1 start`); branch feature/phase-2-auth. Never mark Phase 1 / G1 VERIFIED without Docker.
+**Current phase:** 3 (Ingestion). Phase 2 VERIFIED (G2). Phase 1 TESTED on native services; G1 still BLOCKED on Docker (KI-003, ADR-006)
+**Next step:** Phase 3: read docs/spec/03-ingestion.md and .claude/skills/rag-concurrency-reliability; start services (`scripts/dev_services.ps1 start`); branch feature/phase-3-ingestion. Needs a PDF library and OCR (Tesseract is NOT installed: KI-010). Never mark Phase 1 / G1 VERIFIED without Docker.
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -12,7 +12,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 |---|---|---|---|
 | 0 Recon | - | VERIFIED | Log entry 1 |
 | 1 Foundation | G1 | TESTED (native); G1 BLOCKED on Docker | Log entry 4; KI-003, KI-009 |
-| 2 FastAPI + Auth | G2 | NOT_STARTED | |
+| 2 FastAPI + Auth | G2 | VERIFIED | Log entry 5 |
 | 3 Ingestion | G3 | NOT_STARTED | |
 | 4 Retrieval | G4 | NOT_STARTED | |
 | 5 Sessions + Memory | G5 | NOT_STARTED | |
@@ -28,11 +28,11 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | Requirement | Status | Evidence |
 |---|---|---|
 | Interactive/background pipelines separate | NOT_STARTED | |
-| Versioned modular FastAPI | NOT_STARTED | |
-| Registration/login/refresh/logout/revocation | NOT_STARTED | |
-| Argon2id | NOT_STARTED | |
-| Normalized-email unique constraint | NOT_STARTED | |
-| User isolation (API/Qdrant/checkpoints/memory/jobs/storage) | NOT_STARTED | |
+| Versioned modular FastAPI | TESTED (auth + health routers only) | Log entry 5 |
+| Registration/login/refresh/logout/revocation | VERIFIED | Log entry 5 |
+| Argon2id | VERIFIED | Log entry 5 |
+| Normalized-email unique constraint | VERIFIED | Log entry 5 |
+| User isolation (API/Qdrant/checkpoints/memory/jobs/storage) | PARTIAL (auth sessions only) | Log entry 5 |
 | PDF validation (magic bytes + parser) | NOT_STARTED | |
 | Invalid/encrypted/scanned/corrupted/oversized handling | NOT_STARTED | |
 | Persistent object storage | NOT_STARTED | |
@@ -49,8 +49,8 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | Same-thread concurrency control | NOT_STARTED | |
 | Persistent sessions + PG checkpoints | NOT_STARTED | |
 | Persistent memory | NOT_STARTED | |
-| Rate limiting | NOT_STARTED | |
-| Centralized errors | NOT_STARTED | |
+| Rate limiting | PARTIAL (auth endpoints only; LLM/upload limits pending) | Log entry 5 |
+| Centralized errors | TESTED (contract + handlers) | Log entry 5 |
 | Observability (OTel + LLM tracing) | NOT_STARTED | |
 | Evaluation reports | NOT_STARTED | |
 | Streamlit frontend | NOT_STARTED | |

@@ -12,8 +12,10 @@ from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
+from app.core.security import PasswordService
 from app.database.session import async_session_factory, create_async_db_engine
 from app.infra.clients import create_async_qdrant, create_async_redis
+from app.infra.rate_limit import RateLimiter
 from app.storage.base import ObjectStorage
 from app.storage.factory import create_storage
 
@@ -26,17 +28,22 @@ class Infrastructure:
     redis: AsyncRedis
     qdrant: AsyncQdrantClient
     storage: ObjectStorage
+    passwords: PasswordService
+    rate_limiter: RateLimiter
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
         engine = create_async_db_engine(settings)
+        redis = create_async_redis(settings)
         return cls(
             settings=settings,
             engine=engine,
             session_factory=async_session_factory(engine),
-            redis=create_async_redis(settings),
+            redis=redis,
             qdrant=create_async_qdrant(settings),
             storage=create_storage(settings),
+            passwords=PasswordService(settings),
+            rate_limiter=RateLimiter(redis),
         )
 
     async def close(self) -> None:

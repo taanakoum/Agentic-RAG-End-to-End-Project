@@ -66,7 +66,7 @@ def test_migrations_upgrade_downgrade_upgrade() -> None:
     command.downgrade(_cfg(), "base")
     assert _current_version() is None or _current_version() == ""
     command.upgrade(_cfg(), "head")
-    assert _current_version() == "0001"
+    assert _current_version() == "0002"
     command.downgrade(_cfg(), "base")
     command.upgrade(_cfg(), "head")
-    assert _current_version() == "0001"
+    assert _current_version() == "0002"

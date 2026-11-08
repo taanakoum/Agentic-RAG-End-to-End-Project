@@ -28,3 +28,15 @@ Format: ID, date, context, options considered, decision, consequences. Required 
 ## ADR-006 (2026-11-08): Proceed to Phase 2 while G1 is blocked
 - Context: G1 needs Docker (KI-003). Phase 1 backend components are verified on native services; only the Docker artifacts are unverified.
 - Decision: continue with Phase 2 (its gate G2 needs only PostgreSQL/Redis, available natively). Phase 1 stays "TESTED (native), G1 BLOCKED" until Docker verifies it. Docker-dependent work is never marked VERIFIED.
+
+## ADR-007 (2026-11-08): Access/refresh token design
+- Decision: short-lived HS256 JWT access tokens (15 min) bound to a session id (`sid` = refresh-token family) + opaque rotating refresh tokens stored hashed in PostgreSQL. Each authenticated request verifies in PostgreSQL that the user is active and the session has a live refresh token.
+- Options rejected: pure stateless JWT (no immediate logout/revocation); Redis-only session store (Redis must never be the only copy of critical data).
+- Consequences: one small indexed query per authenticated request in exchange for immediate revocation; reuse of a rotated refresh token revokes the family; concurrent refresh of one token yields exactly one success. HS256 with a single secret: no key rotation yet (documented in SECURITY.md).
+
+## ADR-008 (2026-11-08): Rate limiting fails closed
+- Decision: Redis fixed-window counters; on Redis failure auth endpoints return 503 rather than skipping limits. Per-account lockout counts failures only and is keyed on the submitted identity (existing or not) to avoid account enumeration.
+- Consequences: a Redis outage disables login/registration (security over availability). Fixed-window boundary bursts and deliberate victim lockouts are accepted limitations (SECURITY.md).
+
+## ADR-009 (2026-11-08): Error handling and middleware
+- Decision: one `AppError` hierarchy rendered by central handlers into a single JSON contract; validation errors omit submitted values; pure ASGI middlewares for request IDs and body-size limits (no BaseHTTPMiddleware, so SSE streaming stays safe). The body-size middleware answers 413 itself and signals disconnect to the app, because FastAPI converts exceptions raised from `receive()` into 400.

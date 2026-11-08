@@ -10,12 +10,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from alembic import context
 
+from app import models
 from app.core.config import get_settings
 from app.database.base import Base
 from app.database.session import create_sync_db_engine
 
-# Import model modules here so that autogenerate sees them (added as models are created).
-
+REGISTERED_MODELS = models.__all__
 target_metadata = Base.metadata
 
 

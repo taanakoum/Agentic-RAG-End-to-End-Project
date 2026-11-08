@@ -56,6 +56,33 @@ class Settings(BaseSettings):
     storage_backend: Literal["local"] = "local"
     storage_local_root: Path = REPO_ROOT / "data" / "objects"
 
+    # Auth
+    jwt_secret: SecretStr = SecretStr("")
+    jwt_issuer: str = "agentic-rag"
+    jwt_audience: str = "agentic-rag-api"
+    access_token_ttl_s: int = Field(default=900, ge=60, le=3600)
+    refresh_token_ttl_s: int = Field(default=14 * 24 * 3600, ge=300)
+    password_min_length: int = Field(default=12, ge=8)
+    password_max_length: int = Field(default=128, ge=32, le=1024)
+    argon2_memory_kib: int = Field(default=65536, ge=1024)
+    argon2_time_cost: int = Field(default=3, ge=1)
+    argon2_parallelism: int = Field(default=4, ge=1, le=64)
+    max_concurrent_hashes: int = Field(default=4, ge=1, le=64)
+
+    # Rate limits (Redis). Fixed windows; limit = requests allowed per window.
+    rl_login_ip_limit: int = Field(default=20, ge=1)
+    rl_login_ip_window_s: int = Field(default=60, ge=1)
+    rl_login_account_limit: int = Field(default=5, ge=1)
+    rl_login_account_window_s: int = Field(default=900, ge=1)
+    rl_register_ip_limit: int = Field(default=10, ge=1)
+    rl_register_ip_window_s: int = Field(default=3600, ge=1)
+    rl_refresh_ip_limit: int = Field(default=60, ge=1)
+    rl_refresh_ip_window_s: int = Field(default=60, ge=1)
+
+    # HTTP
+    max_body_bytes: int = Field(default=1024 * 1024, ge=1024)
+    cors_origins: list[str] = Field(default_factory=list)
+
     # Celery
     celery_task_time_limit_s: int = Field(default=900, ge=10)
     celery_task_soft_time_limit_s: int = Field(default=840, ge=5)
@@ -66,7 +93,11 @@ class Settings(BaseSettings):
     def _validate(self) -> Settings:
         if self.celery_task_soft_time_limit_s >= self.celery_task_time_limit_s:
             raise ValueError("celery_task_soft_time_limit_s must be < celery_task_time_limit_s")
+        if len(self.jwt_secret.get_secret_value()) < 32:
+            raise ValueError("jwt_secret must be set and at least 32 characters")
         if self.app_env == "prod":
+            if self.argon2_memory_kib < 19456 or self.argon2_time_cost < 2:
+                raise ValueError("argon2 parameters are below the OWASP minimum for prod")
             if self.postgres_password.get_secret_value().lower() in _INSECURE_PASSWORDS:
                 raise ValueError("postgres_password must be set to a non-default value in prod")
             if not self.log_json:

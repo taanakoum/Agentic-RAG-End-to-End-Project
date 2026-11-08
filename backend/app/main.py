@@ -2,52 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, MutableMapping
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.request_context import (
-    REQUEST_ID_HEADER,
-    sanitize_request_id,
-    set_request_id,
-)
+from app.core.middleware import BodySizeLimitMiddleware, RequestIdMiddleware
 from app.infra.container import Infrastructure
-
-_Scope = MutableMapping[str, Any]
-
-
-class RequestIdMiddleware:
-    """Pure ASGI middleware (safe for SSE streaming, unlike BaseHTTPMiddleware)."""
-
-    def __init__(self, app: Any) -> None:
-        self.app = app
-
-    async def __call__(self, scope: _Scope, receive: Any, send: Any) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        incoming = next(
-            (v.decode("latin-1") for k, v in scope["headers"] if k == b"x-request-id"), None
-        )
-        request_id = sanitize_request_id(incoming)
-        set_request_id(request_id)
-
-        async def send_with_id(message: _Scope) -> None:
-            if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers.append((REQUEST_ID_HEADER.lower().encode(), request_id.encode()))
-                message["headers"] = headers
-            await send(message)
-
-        try:
-            await self.app(scope, receive, send_with_id)
-        finally:
-            set_request_id(None)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -76,6 +42,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None if settings.app_env == "prod" else "/openapi.json",
     )
+    register_exception_handlers(app)
+    # add_middleware: the last one added is outermost. Request ID must wrap everything else.
+    app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_methods=["GET", "POST", "PATCH", "DELETE"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        )
     app.add_middleware(RequestIdMiddleware)
     app.include_router(api_router)
     return app
