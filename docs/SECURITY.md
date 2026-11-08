@@ -43,5 +43,13 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 - JWT signing key rotation with `kid` (ADR-010). Key storage is environment variables only (no KMS/vault).
 - Limits: the email file backend writes tokens to disk (dev/test only); SMTP credentials live in env; recovery codes carry ~50 bits and rely on the 5-attempt rate limit; TOTP seeds are only as safe as `MFA_ENCRYPTION_KEY` (rotating it invalidates enrolled seeds; no re-encryption tool yet).
 
+## Uploads and documents (Phase 3)
+- Independent checks in order: file name present, `.pdf` extension (415), declared MIME (415), size (413), `%PDF-` magic bytes within the first 1 KiB (400), parser opens it (400 corrupted/malformed), not encrypted (422), page count (422). A `.pdf` name or `application/pdf` header alone never makes a file valid; a real PDF with the wrong extension or MIME is refused with 415. Parser inspection runs in a worker thread under a timeout. Text extraction and OCR run only in the Celery worker.
+- Storage keys are generated (`<user>/<document>/original.pdf`); user filenames are only a sanitized display name (path components and control characters removed, 255 chars). Local storage also verifies the resolved path stays inside the root.
+- Integrity: the SHA-256 computed on upload is compared with the bytes actually stored, and again by the worker before extraction (`STORAGE_INTEGRITY`).
+- Isolation: every document/job query filters by the authenticated user; other users' ids behave like missing ids (404); a re-upload by another user is a normal 202 so existence is never revealed; workers re-check that job and document belong to the same user; every Qdrant maintenance filter carries user_id and document_id; points carry `user_id` as a tenant-indexed field for Phase 4 query filters.
+- Limits (configurable): PDF size 25 MiB, 300 pages, upload rate 30/hour per user, request body cap = PDF limit + 1 MiB on the upload route only, OCR pages and DPI.
+- Not covered: malware scanning, sandboxing the PDF parser in a separate process/container (pypdf runs in-process in a thread; a hostile PDF can still burn CPU until the timeout/worker time limit), encryption of stored objects at rest.
+
 ## Not implemented yet
 Account deletion, breached-password check, audit log table, malware scanning of uploads, prompt-injection defenses (Phases 3-6).

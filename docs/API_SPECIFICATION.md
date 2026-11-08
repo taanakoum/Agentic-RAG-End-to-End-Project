@@ -44,5 +44,18 @@ Unknown JSON fields are rejected (422). Bodies over 1 MiB (configurable) get 413
 
 `POST /auth/login` now returns `{mfa_required, access_token, refresh_token, token_type, expires_in, mfa_token}`; when `mfa_required` is true only `mfa_token` is set. `UserPublic` gained `email_verified`.
 
+## Documents and ingestion (Bearer required; every route is scoped to the caller)
+| Method | Path | Notes | Success | Errors |
+|---|---|---|---|---|
+| POST | /documents/upload | multipart field `file` (PDF) | 202 new `{document, job_id, duplicate:false}`; 200 when an identical file was uploaded before (`duplicate:true`, nothing re-processed) | 400 `DOCUMENT_EMPTY`/`DOCUMENT_INVALID_FORMAT`/`DOCUMENT_CORRUPTED`/`DOCUMENT_MISSING`, 413 `DOCUMENT_TOO_LARGE`/`PAYLOAD_TOO_LARGE`, 415 `DOCUMENT_UNSUPPORTED_TYPE`, 422 `DOCUMENT_ENCRYPTED`/`DOCUMENT_TOO_MANY_PAGES`/`VALIDATION_ERROR`, 429, 503 |
+| GET | /documents | `limit` (1-100), `offset`, `status` | `{items, total, limit, offset}` | 401 |
+| GET | /documents/{id} and /documents/{id}/status | | document incl. `status`, `page_count`, `chunk_count`, `ocr_status`, `ocr_pages`, `version`, `latest_job_id`, `error{code,message,recoverable}` | 404 |
+| POST | /documents/{id}/reindex | completed or failed documents | 202 `{document_id, job_id, status}` (new version) | 404, 409 `REINDEX_NOT_ALLOWED` |
+| DELETE | /documents/{id} | tombstone now, purge async | 202 `{document_id, status:"deleting"}` | 404 |
+| GET | /ingestion/{job_id} | | `{id, document_id, version, status, attempts, error, created_at, started_at, finished_at}` | 404 |
+| POST | /ingestion/{job_id}/retry | only failed + recoverable | 202 new job | 404, 409 `RETRY_NOT_ALLOWED` |
+
+Other users' documents and jobs return 404, identical to a non-existent id. Document statuses: pending, validating, queued, processing, extracting, chunking, embedding, indexing, completed, failed. Only `completed` documents will be retrievable (Phase 4).
+
 ## Not yet implemented
-Users, documents, ingestion, sessions/chat, memory, feedback, evaluation endpoints (see docs/spec/06-api-errors-frontend.md).
+Users, sessions/chat, memory, feedback, evaluation endpoints (see docs/spec/06-api-errors-frontend.md).

@@ -19,6 +19,7 @@ cd backend
 $env:PYTHONPATH = "."
 uvicorn app.main:app --port 8000
 celery -A app.tasks.celery_app:celery_app worker --pool=solo --loglevel=INFO
+celery -A app.tasks.celery_app:celery_app beat --loglevel=INFO   # outbox dispatcher + reconciler
 ```
 Health: `GET /api/v1/health/live`, `/ready` (PostgreSQL, Redis, Qdrant, storage), `/workers`.
 
