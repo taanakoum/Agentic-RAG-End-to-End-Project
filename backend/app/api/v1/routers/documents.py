@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
 from app.core.exceptions import error_responses
-from app.dependencies.auth import CurrentUser, DocumentServiceDep
+from app.dependencies.auth import CurrentUser, DocumentServiceDep, VerifiedUser
 from app.schemas.documents import (
     DeleteAccepted,
     DocumentList,
@@ -24,11 +24,11 @@ router = APIRouter(prefix="/documents", tags=["documents"])
     "/upload",
     response_model=UploadResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    responses=error_responses(400, 401, 413, 415, 422, 429, 503),
+    responses=error_responses(400, 401, 403, 413, 415, 422, 429, 503),
 )
 async def upload_document(
     response: Response,
-    current: CurrentUser,
+    current: VerifiedUser,
     service: DocumentServiceDep,
     file: Annotated[UploadFile, File(description="The PDF to ingest")],
 ) -> UploadResponse:
@@ -82,7 +82,7 @@ async def get_document_status(
     responses=error_responses(401, 404, 409),
 )
 async def reindex_document(
-    document_id: uuid.UUID, current: CurrentUser, service: DocumentServiceDep
+    document_id: uuid.UUID, current: VerifiedUser, service: DocumentServiceDep
 ) -> JobAccepted:
     return await service.reindex(current, document_id)
 

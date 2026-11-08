@@ -168,3 +168,12 @@ def count_document_points(
     if not client.collection_exists(name):
         return 0
     return client.count(name, count_filter=_owner_filter(user_id, document_id), exact=True).count
+
+
+def delete_user_points(client: QdrantClient, settings: Settings, *, user_id: uuid.UUID) -> None:
+    """Remove every vector owned by a user (account deletion). The tenant filter is user_id."""
+    _delete(
+        client,
+        settings,
+        Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=str(user_id)))]),
+    )

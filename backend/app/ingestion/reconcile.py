@@ -10,10 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.logging import get_logger
-from app.ingestion.outbox import KIND_INGEST, KIND_PURGE
+from app.ingestion.outbox import KIND_INGEST, KIND_PURGE, KIND_PURGE_USER
 from app.ingestion.states import JobStatus
 from app.ingestion.store import IngestionStore, utcnow
 from app.models.document import Document, IngestionJob, OutboxEvent
+from app.models.user import User
 
 log = get_logger(__name__)
 
@@ -24,6 +25,7 @@ class ReconcileReport:
     recovered_processing: int = 0
     failed_exhausted: int = 0
     purges_requeued: int = 0
+    user_purges_requeued: int = 0
 
 
 def _recent_event_exists(
@@ -103,9 +105,20 @@ def reconcile(session: Session, settings: Settings) -> ReconcileReport:
             store.add_outbox(KIND_PURGE, {"document_id": str(document_id), "user_id": str(user_id)})
             purges += 1
 
+    # 4. accounts whose deletion has not finished: publish the user purge again
+    user_purges = 0
+    for (user_id,) in session.execute(
+        select(User.id).where(User.deleted_at.is_not(None), User.deleted_at < purge_cutoff)
+    ).all():
+        if not _recent_event_exists(
+            session, KIND_PURGE_USER, "user_id", str(user_id), since=purge_cutoff
+        ):
+            store.add_outbox(KIND_PURGE_USER, {"user_id": str(user_id)})
+            user_purges += 1
+
     pruned = prune_outbox(session)
-    report = ReconcileReport(queued, recovered, exhausted, purges)
-    if any((queued, recovered, exhausted, purges, pruned)):
+    report = ReconcileReport(queued, recovered, exhausted, purges, user_purges)
+    if any((queued, recovered, exhausted, purges, user_purges, pruned)):
         log.info(
             "reconciled",
             requeued_queued=queued,

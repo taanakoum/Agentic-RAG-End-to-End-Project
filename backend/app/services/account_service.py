@@ -12,6 +12,7 @@ from app.core.config import Settings
 from app.core.exceptions import ErrorDetail, MalformedRequestError, RequestValidationAppError
 from app.core.logging import get_logger
 from app.core.security import (
+    PASSWORD_MESSAGES,
     InvalidEmailError,
     PasswordService,
     generate_opaque_token,
@@ -21,21 +22,16 @@ from app.core.security import (
 )
 from app.infra.email import EmailSender, OutgoingEmail
 from app.infra.rate_limit import RateLimiter, subject_key
+from app.ingestion.outbox import KIND_PURGE_USER
+from app.models.document import OutboxEvent
 from app.models.one_time_token import PURPOSE_EMAIL_VERIFY, PURPOSE_PASSWORD_RESET
 from app.repositories.account import OneTimeTokenRepository
+from app.repositories.documents import DocumentRepository
 from app.repositories.refresh_tokens import RefreshTokenRepository
 from app.repositories.users import UserRepository
 from app.services.auth_service import AuthenticatedUser
 
 log = get_logger(__name__)
-
-_POLICY_MESSAGES = {
-    "password_too_short": "Password is too short.",
-    "password_too_long": "Password is too long.",
-    "password_blank": "Password must not be blank.",
-    "password_too_repetitive": "Password is too repetitive.",
-    "password_too_guessable": "Password is too easy to guess.",
-}
 
 
 def _utc_now() -> datetime:
@@ -45,7 +41,7 @@ def _utc_now() -> datetime:
 def _policy_error(violations: list[str], field: str) -> RequestValidationAppError:
     return RequestValidationAppError(
         details=[
-            ErrorDetail(field=field, code=v, message=_POLICY_MESSAGES.get(v, "Invalid password."))
+            ErrorDetail(field=field, code=v, message=PASSWORD_MESSAGES.get(v, "Invalid password."))
             for v in violations
         ]
     )
@@ -71,6 +67,8 @@ class AccountService:
         self._users = UserRepository(session)
         self._sessions = RefreshTokenRepository(session)
         self._tokens = OneTimeTokenRepository(session)
+        self._docs = DocumentRepository(session)
+        self._notifications: list[OutgoingEmail] = []
 
     # ------------------------------------------------------------ change password
 
@@ -118,6 +116,46 @@ class AccountService:
                 "The password for your account was just changed and your other devices were signed "
                 "out. If this was not you, reset your password immediately."
             ),
+        )
+
+    # ------------------------------------------------------------ delete account
+
+    async def delete_account(self, user: AuthenticatedUser, *, password: str) -> None:
+        """Start permanent deletion: lock the account now, purge everything asynchronously.
+
+        In ONE transaction: all sessions revoked, account deactivated and tombstoned, every
+        document tombstoned with a purge event, and a `purge_user` event queued. The worker then
+        removes vectors, files and finally the user row, which frees the email address.
+        """
+        s = self._settings
+        subject = subject_key(str(user.id))
+        await self._limiter.check("pwchange", subject, limit=s.rl_pwchange_limit)
+        row = await self._users.get_by_id(user.id)
+        if row is None or not await self._passwords.verify(row.password_hash, password):
+            await self._limiter.fail("pwchange", subject, window_s=s.rl_pwchange_window_s)
+            raise RequestValidationAppError(
+                details=[
+                    ErrorDetail(
+                        field="password", code="incorrect_password", message="Incorrect password."
+                    )
+                ]
+            )
+        now = self._clock()
+        email = row.email
+        await self._sessions.revoke_all_for_user(user.id, reason="account_deleted", now=now)
+        await self._users.deactivate_for_deletion(user.id, now=now)
+        await self._tokens.invalidate_unused(user.id, PURPOSE_PASSWORD_RESET, now=now)
+        await self._tokens.invalidate_unused(user.id, PURPOSE_EMAIL_VERIFY, now=now)
+        await self._docs.tombstone_all(user.id, now=now)
+        self._session.add(OutboxEvent(kind=KIND_PURGE_USER, payload={"user_id": str(user.id)}))
+        await self._session.commit()
+        await self._limiter.reset("pwchange", subject)
+        log.info("account_deletion_requested", user_id=str(user.id))
+        await self._notify(
+            email,
+            "Your account is being deleted",
+            "Your account deletion was requested. Your documents and data are being removed "
+            "permanently. If this was not you, contact support immediately.",
         )
 
     # ------------------------------------------------------------ forgot / reset
@@ -280,8 +318,11 @@ class AccountService:
         return token
 
     async def _notify(self, to: str, subject: str, body: str) -> None:
-        """Best-effort security notification; failures must not undo the completed change."""
-        try:
-            await self._email.send(OutgoingEmail(to=to, subject=subject, body=body))
-        except Exception:
-            log.warning("security_notification_failed")
+        """Queue a security notification. It is sent AFTER the HTTP response (see
+        `take_notifications` and services.background.send_emails), so a slow mail server can never
+        delay the request or undo the completed change."""
+        self._notifications.append(OutgoingEmail(to=to, subject=subject, body=body))
+
+    def take_notifications(self) -> list[OutgoingEmail]:
+        taken, self._notifications = self._notifications, []
+        return taken

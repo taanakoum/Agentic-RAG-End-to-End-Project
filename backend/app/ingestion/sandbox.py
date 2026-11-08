@@ -17,12 +17,17 @@ isolation. In Docker the worker already runs as an unprivileged user with a read
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import json
 import os
+import queue
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -202,12 +207,12 @@ def run_sandboxed(
         log.warning("sandbox_child_failed", returncode=process.returncode, kind=kind)
         raise SandboxError(kind, f"child exited with code {process.returncode}: {tail.strip()}")
     try:
-        payload = json.loads(stdout.decode("utf-8"))
+        decoded: Any = json.loads(stdout.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as exc:
         raise SandboxError("protocol", "child did not return valid JSON") from exc
-    if not isinstance(payload, dict):
+    if not isinstance(decoded, dict):
         raise SandboxError("protocol", "child returned a non-object")
-    return payload  # type: ignore[return-value]
+    return cast(dict[str, Any], decoded)
 
 
 def _kill_tree(process: subprocess.Popen[bytes]) -> None:
@@ -247,3 +252,215 @@ def child_python() -> tuple[str, dict[str, str]]:
 def module_command(module: str, *args: str | Path) -> tuple[list[str], dict[str, str]]:
     exe, env = child_python()
     return [exe, "-m", module, *[str(a) for a in args]], env
+
+
+# ====================================================================== warm (persistent) children
+
+
+class PersistentSandbox:
+    """One long-lived sandboxed child speaking JSON lines. Same limits as `run_sandboxed`.
+
+    Why: starting a Python process and importing pypdf costs ~0.4 s, and loading Docling's models
+    ~15 s. A warm child pays that once and then answers requests in milliseconds. The child is
+    killed and replaced when a call times out, when it crashes, or after `max_jobs` calls (which
+    bounds any memory growth or state leakage between documents). Calls are serialised per child.
+    """
+
+    def __init__(
+        self,
+        argv: list[str],
+        *,
+        limits: SandboxLimits,
+        extra_env: dict[str, str] | None = None,
+        max_jobs: int = 25,
+        startup_timeout_s: float = 180.0,
+    ) -> None:
+        self._argv = argv
+        self._limits = limits
+        self._extra_env = extra_env or {}
+        self._max_jobs = max_jobs
+        self._startup_timeout_s = startup_timeout_s
+        self._lock = threading.Lock()
+        self._process: subprocess.Popen[bytes] | None = None
+        self._job: Any = None
+        self._lines: queue.Queue[bytes | None] = queue.Queue()
+        self._workdir: tempfile.TemporaryDirectory[str] | None = None
+        self._stderr: Any = None
+        self._jobs_done = 0
+        self.spawn_count = 0  # observable for tests and metrics
+
+    # -- lifecycle ----------------------------------------------------------------------------
+
+    def _spawn(self) -> None:
+        self._workdir = tempfile.TemporaryDirectory(prefix="sandbox-warm-")
+        workdir = self._workdir.name
+        env = scrubbed_env({"TEMP": workdir, "TMP": workdir, "TMPDIR": workdir, **self._extra_env})
+        kwargs: dict[str, Any] = {}
+        if sys.platform == "win32":
+            self._job = _make_job(self._limits.memory_mb)
+            kwargs["creationflags"] = 0x00000200
+        elif self._limits.memory_mb and self._limits.address_space:  # pragma: no cover
+            kwargs["preexec_fn"] = _posix_session_with_memory(self._limits)
+        else:  # pragma: no cover
+            kwargs["start_new_session"] = True
+        self._stderr = tempfile.TemporaryFile()  # noqa: SIM115  (closed in _kill)
+        self._process = cast(
+            "subprocess.Popen[bytes]",
+            subprocess.Popen(  # noqa: S603  (argv is built by our own code)
+                self._argv,
+                cwd=workdir,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=self._stderr,
+                **kwargs,
+            ),
+        )
+        if self._job is not None:
+            _assign(self._job, self._process)
+        self._lines = queue.Queue()
+        threading.Thread(
+            target=self._read_loop, args=(self._process, self._lines), daemon=True
+        ).start()
+        self.spawn_count += 1
+        self._jobs_done = 0
+        try:
+            line = self._lines.get(timeout=self._startup_timeout_s)
+        except queue.Empty as exc:
+            self._kill()
+            raise SandboxError("timeout", "sandbox child did not start in time") from exc
+        if line is None or json.loads(line).get("ready") is not True:
+            tail = self._stderr_tail()
+            self._kill()
+            raise SandboxError("crash", f"sandbox child failed to start: {tail}")
+
+    @staticmethod
+    def _read_loop(process: subprocess.Popen[bytes], lines: queue.Queue[bytes | None]) -> None:
+        stdout = process.stdout
+        if stdout is not None:
+            for line in iter(stdout.readline, b""):
+                lines.put(line)
+        lines.put(None)  # EOF: the child exited
+
+    def _stderr_tail(self) -> str:
+        if self._stderr is None:
+            return ""
+        try:
+            self._stderr.flush()
+            self._stderr.seek(0, os.SEEK_END)
+            size = self._stderr.tell()
+            self._stderr.seek(max(0, size - 600))
+            return self._stderr.read().decode("utf-8", "replace").strip()
+        except (OSError, ValueError):
+            return ""
+
+    def _kill(self) -> None:
+        process, self._process = self._process, None
+        if process is not None:
+            _kill_tree(process)
+            for stream in (process.stdin, process.stdout):
+                if stream is not None:
+                    with contextlib.suppress(OSError):
+                        stream.close()
+            process.wait()
+        if self._job is not None:
+            _close_job(self._job)
+            self._job = None
+        if self._stderr is not None:
+            self._stderr.close()
+            self._stderr = None
+        if self._workdir is not None:
+            self._workdir.cleanup()
+            self._workdir = None
+
+    def close(self) -> None:
+        with self._lock:
+            self._kill()
+
+    # -- calls ---------------------------------------------------------------------------------
+
+    def call(self, request: dict[str, Any], *, timeout_s: float) -> dict[str, Any]:
+        with self._lock:
+            if (
+                self._process is None
+                or self._process.poll() is not None
+                or self._jobs_done >= self._max_jobs
+            ):
+                self._kill()
+                self._spawn()
+            process = self._process
+            if process is None or process.stdin is None:
+                raise SandboxError("crash", "sandbox child is not running")
+            try:
+                process.stdin.write(json.dumps(request).encode("utf-8") + b"\n")
+                process.stdin.flush()
+            except OSError as exc:
+                tail = self._stderr_tail()
+                self._kill()
+                raise SandboxError("crash", f"sandbox child is gone: {tail}") from exc
+            try:
+                line = self._lines.get(timeout=timeout_s)
+            except queue.Empty as exc:
+                self._kill()  # a hung child is never reused
+                raise SandboxError("timeout", f"exceeded {timeout_s:.0f}s") from exc
+            if line is None:
+                tail = self._stderr_tail()
+                self._kill()
+                kind = "memory" if "MemoryError" in tail or "Cannot allocate" in tail else "crash"
+                raise SandboxError(kind, f"sandbox child exited: {tail[-300:]}")
+            if len(line) > MAX_OUTPUT_BYTES:
+                self._kill()
+                raise SandboxError("output", "child produced too much output")
+            self._jobs_done += 1
+        try:
+            decoded: Any = json.loads(line)
+        except ValueError as exc:
+            raise SandboxError("protocol", "child did not return valid JSON") from exc
+        if not isinstance(decoded, dict):
+            raise SandboxError("protocol", "child returned a non-object")
+        payload = cast(dict[str, Any], decoded)
+        if payload.get("crashed"):
+            raise SandboxError("crash", str(payload.get("message", "child raised an exception")))
+        return payload
+
+
+def _posix_session_with_memory(limits: SandboxLimits) -> Any:  # pragma: no cover
+    def apply() -> None:
+        if sys.platform == "win32":
+            return
+        import resource
+
+        os.setsid()
+        if limits.memory_mb:
+            cap = limits.memory_mb * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+    return apply
+
+
+class SandboxPool:
+    """A fixed number of warm children; callers wait (without spinning) when all are busy."""
+
+    def __init__(self, factory: Callable[[], PersistentSandbox], size: int) -> None:
+        self._all = [factory() for _ in range(size)]
+        self._idle: queue.LifoQueue[PersistentSandbox] = queue.LifoQueue()
+        for sandbox in self._all:
+            self._idle.put(sandbox)
+        self.size = size
+        atexit.register(self.close)
+
+    def call(self, request: dict[str, Any], *, timeout_s: float) -> dict[str, Any]:
+        sandbox = self._idle.get()
+        try:
+            return sandbox.call(request, timeout_s=timeout_s)
+        finally:
+            self._idle.put(sandbox)
+
+    @property
+    def spawn_count(self) -> int:
+        return sum(s.spawn_count for s in self._all)
+
+    def close(self) -> None:
+        for sandbox in self._all:
+            sandbox.close()

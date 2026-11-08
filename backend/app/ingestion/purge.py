@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from app.core.logging import get_logger
-from app.ingestion.indexing import delete_document_points
+from app.ingestion.indexing import delete_document_points, delete_user_points
 from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.store import IngestionStore
 
@@ -38,4 +38,28 @@ def purge_document(rt: WorkerRuntime, document_id: uuid.UUID, user_id: uuid.UUID
         rt.storage.delete_prefix(f"{user_id}/{document_id}")
         store.hard_delete_document(document_id)
     log.info("document_purged", document_id=str(document_id))
+    return "purged"
+
+
+def purge_user(rt: WorkerRuntime, user_id: uuid.UUID) -> str:
+    """Final step of account deletion: vectors, stored files, then the user row (cascades).
+
+    Idempotent. The user row goes LAST so a failure is retried (task) or re-published (reconciler).
+    Documents were already tombstoned when deletion was requested.
+    """
+    from app.models.user import User
+
+    with rt.session_factory() as session:
+        user = session.get(User, user_id)
+        if user is None:
+            return "already_purged"
+        if user.deleted_at is None:
+            return "not_deleted"
+        if IngestionStore(session).has_processing_job_for_user(user_id):
+            raise PurgeBusyError(str(user_id))
+        delete_user_points(rt.qdrant, rt.settings, user_id=user_id)
+        rt.storage.delete_prefix(str(user_id))
+        session.delete(user)  # sessions, tokens, MFA, documents and jobs cascade
+        session.commit()
+    log.info("user_purged", user_id=str(user_id))
     return "purged"

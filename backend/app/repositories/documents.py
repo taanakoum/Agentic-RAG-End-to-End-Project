@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import distinct_on
@@ -96,23 +97,57 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
+    def _latest_job_id(self) -> Any:
+        return (
+            select(IngestionJob.id)
+            .where(IngestionJob.document_id == Document.id)
+            .order_by(IngestionJob.created_at.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+
+    async def get_owned_with_job(
+        self, user_id: uuid.UUID, document_id: uuid.UUID
+    ) -> tuple[Document, uuid.UUID | None] | None:
+        """The document and its latest job id in one round trip."""
+        row = (
+            await self._session.execute(
+                select(Document, self._latest_job_id()).where(
+                    Document.id == document_id,
+                    Document.user_id == user_id,
+                    Document.deleted_at.is_(None),
+                )
+            )
+        ).first()
+        return None if row is None else (row[0], row[1])
+
     async def list_owned(
         self, user_id: uuid.UUID, *, limit: int, offset: int, status: str | None
-    ) -> tuple[list[Document], int]:
-        base = select(Document).where(Document.user_id == user_id, Document.deleted_at.is_(None))
+    ) -> tuple[list[tuple[Document, uuid.UUID | None]], int]:
+        """A page of documents with latest job ids and the total, in ONE query (window count)."""
+        query = select(Document, self._latest_job_id(), func.count().over()).where(
+            Document.user_id == user_id, Document.deleted_at.is_(None)
+        )
+        if status is not None:
+            query = query.where(Document.status == status)
+        rows = (
+            await self._session.execute(
+                query.order_by(Document.created_at.desc(), Document.id).limit(limit).offset(offset)
+            )
+        ).all()
+        if rows:
+            return [(r[0], r[1]) for r in rows], int(rows[0][2])
+        if offset == 0:
+            return [], 0
+        # a page past the end: the window count has no row to ride on, so count separately
         count = (
             select(func.count())
             .select_from(Document)
             .where(Document.user_id == user_id, Document.deleted_at.is_(None))
         )
         if status is not None:
-            base = base.where(Document.status == status)
             count = count.where(Document.status == status)
-        rows = await self._session.execute(
-            base.order_by(Document.created_at.desc(), Document.id).limit(limit).offset(offset)
-        )
-        total = (await self._session.execute(count)).scalar_one()
-        return list(rows.scalars().all()), int(total)
+        return [], int((await self._session.execute(count)).scalar_one())
 
     async def latest_job_ids(self, document_ids: list[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
         if not document_ids:
@@ -194,3 +229,22 @@ class DocumentRepository:
         )
         await self._session.flush()
         return True
+
+    async def tombstone_all(self, user_id: uuid.UUID, *, now: datetime) -> int:
+        """Soft-delete every live document of a user and queue a purge event for each."""
+        result = await self._session.execute(
+            update(Document)
+            .where(Document.user_id == user_id, Document.deleted_at.is_(None))
+            .values(deleted_at=now)
+            .returning(Document.id)
+        )
+        ids = [row[0] for row in result.all()]
+        for document_id in ids:
+            self._session.add(
+                OutboxEvent(
+                    kind=KIND_PURGE,
+                    payload={"document_id": str(document_id), "user_id": str(user_id)},
+                )
+            )
+        await self._session.flush()
+        return len(ids)

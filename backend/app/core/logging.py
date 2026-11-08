@@ -63,7 +63,11 @@ def configure_logging(*, level: str, json_output: bool, service: str) -> None:
     renderer: Any = (
         structlog.processors.JSONRenderer()
         if json_output
-        else structlog.dev.ConsoleRenderer(colors=False)
+        else structlog.dev.ConsoleRenderer(
+            colors=False,
+            # Never rich tracebacks: they print local variable values (secrets!) and are very slow.
+            exception_formatter=structlog.dev.plain_traceback,
+        )
     )
     structlog.configure(
         processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],

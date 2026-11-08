@@ -14,10 +14,12 @@ log = get_logger(__name__)
 
 KIND_INGEST = "ingest_document"
 KIND_PURGE = "purge_document"
+KIND_PURGE_USER = "purge_user"
 
 TASK_BY_KIND = {
     KIND_INGEST: "ingestion.process_document",
     KIND_PURGE: "ingestion.purge_document",
+    KIND_PURGE_USER: "ingestion.purge_user",
 }
 
 
@@ -25,6 +27,8 @@ def _args_for(event: OutboxEvent) -> list[str]:
     payload = event.payload
     if event.kind == KIND_INGEST:
         return [str(payload["job_id"])]
+    if event.kind == KIND_PURGE_USER:
+        return [str(payload["user_id"])]
     return [str(payload["document_id"]), str(payload["user_id"])]
 
 

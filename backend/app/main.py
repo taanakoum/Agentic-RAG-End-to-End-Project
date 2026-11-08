@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -25,6 +27,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+        # asyncio.to_thread (storage, hashing, SMTP, outbox) shares this executor; the default
+        # (cpu_count + 4) is too small for many simultaneous uploads.
+        asyncio.get_running_loop().set_default_executor(
+            ThreadPoolExecutor(max_workers=settings.thread_pool_size, thread_name_prefix="api")
+        )
         infra = Infrastructure.create(settings)
         app.state.infra = infra
         log.info("startup_complete", env=settings.app_env)

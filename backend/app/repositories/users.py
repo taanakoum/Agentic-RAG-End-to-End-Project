@@ -43,6 +43,11 @@ class UserRepository:
             update(User).where(User.id == user_id).values(password_hash=password_hash)
         )
 
+    async def deactivate_for_deletion(self, user_id: uuid.UUID, *, now: datetime) -> None:
+        await self._session.execute(
+            update(User).where(User.id == user_id).values(is_active=False, deleted_at=now)
+        )
+
     async def mark_email_verified(self, user_id: uuid.UUID, *, now: datetime) -> None:
         await self._session.execute(
             update(User)

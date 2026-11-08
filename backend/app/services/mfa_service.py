@@ -213,3 +213,18 @@ class MfaService:
     @staticmethod
     def _invalid_code() -> AuthenticationError:
         return AuthenticationError("The verification code is invalid.", code="INVALID_MFA_CODE")
+
+    async def require_second_factor(self, user: AuthenticatedUser, code: str | None) -> None:
+        """For sensitive actions: an account with MFA must present a valid TOTP/recovery code."""
+        row = await self._mfa.get(user.id)
+        if row is None or row.confirmed_at is None:
+            return
+        s = self._settings
+        subject = subject_key("mfa", str(user.id))
+        await self._limiter.check("mfa", subject, limit=s.rl_mfa_limit)
+        if not code or not await self._check_second_factor(user.id, code):
+            await self._limiter.fail("mfa", subject, window_s=s.rl_mfa_window_s)
+            await self._session.commit()
+            raise self._invalid_code()
+        await self._session.commit()  # persists the consumed TOTP step / recovery code
+        await self._limiter.reset("mfa", subject)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import BinaryIO
@@ -21,6 +22,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.infra.rate_limit import RateLimiter, subject_key
 from app.ingestion.outbox import dispatch_outbox
+from app.ingestion.parsing import PdfParser
 from app.ingestion.pipeline import object_key
 from app.ingestion.states import DocumentStatus
 from app.ingestion.validation import ValidatedPdf, safe_filename, validate_pdf
@@ -99,12 +101,16 @@ class DocumentService:
         storage: ObjectStorage,
         limiter: RateLimiter,
         sync_session_factory: sessionmaker[Session],
+        parser: PdfParser,
+        validation_executor: ThreadPoolExecutor,
     ) -> None:
         self._session = session
         self._settings = settings
         self._storage = storage
         self._limiter = limiter
         self._sync_sf = sync_session_factory
+        self._parser = parser
+        self._executor = validation_executor
         self._docs = DocumentRepository(session)
 
     # ------------------------------------------------------------------ upload
@@ -178,10 +184,20 @@ class DocumentService:
         self, file: BinaryIO, filename: str | None, content_type: str | None
     ) -> ValidatedPdf:
         s = self._settings
+        loop = asyncio.get_running_loop()
         try:
+            # Dedicated executor: validation (file copy, hashing, waiting for a warm sandbox)
+            # must never occupy the shared threads used by hashing/storage/e-mail.
             return await asyncio.wait_for(
-                asyncio.to_thread(
-                    validate_pdf, file, filename=filename, content_type=content_type, settings=s
+                loop.run_in_executor(
+                    self._executor,
+                    lambda: validate_pdf(
+                        file,
+                        filename=filename,
+                        content_type=content_type,
+                        settings=s,
+                        parser=self._parser,
+                    ),
                 ),
                 timeout=s.upload_validation_timeout_s,
             )
@@ -208,22 +224,21 @@ class DocumentService:
     async def list(
         self, user: AuthenticatedUser, *, limit: int, offset: int, status: str | None
     ) -> DocumentList:
-        docs, total = await self._docs.list_owned(
+        rows, total = await self._docs.list_owned(
             user.id, limit=limit, offset=offset, status=status
         )
-        latest = await self._docs.latest_job_ids([d.id for d in docs])
         return DocumentList(
-            items=[to_public(d, latest.get(d.id)) for d in docs],
+            items=[to_public(doc, job_id) for doc, job_id in rows],
             total=total,
             limit=limit,
             offset=offset,
         )
 
     async def get(self, user: AuthenticatedUser, document_id: uuid.UUID) -> DocumentPublic:
-        doc = await self._docs.get_owned(user.id, document_id)
-        if doc is None:
+        found = await self._docs.get_owned_with_job(user.id, document_id)
+        if found is None:
             raise ResourceNotFoundError()
-        return to_public(doc, (await self._docs.latest_job_ids([doc.id])).get(doc.id))
+        return to_public(*found)
 
     async def get_job(self, user: AuthenticatedUser, job_id: uuid.UUID) -> JobPublic:
         job = await self._docs.get_job_owned(user.id, job_id)

@@ -17,6 +17,10 @@ from typing import Any
 
 from app.ingestion.textnorm import meaningful_chars, normalize_text
 
+_CONVERTERS: dict[tuple[bool, bool], Any] = {}  # warm-process caches (see serve())
+_CHUNKERS: dict[tuple[str, int], Any] = {}
+_OCR: dict[str, Any] = {}
+
 
 def _fail(code: str, message: str) -> dict[str, Any]:
     return {"ok": False, "code": code, "message": message}
@@ -65,7 +69,7 @@ def cmd_light(path: str, opts: dict[str, Any]) -> dict[str, Any]:
     elif needs:
         from app.ingestion.ocr import RapidOcrEngine
 
-        engine = RapidOcrEngine()
+        engine = _OCR.setdefault("rapid", RapidOcrEngine())
         data = open(path, "rb").read()  # noqa: SIM115
         limit = int(opts["ocr_max_pages"])
         failures = 0
@@ -148,12 +152,16 @@ def cmd_docling(path: str, opts: dict[str, Any]) -> dict[str, Any]:
     with open(path, "rb") as handle:
         stream = DocumentStream(name="document.pdf", stream=io.BytesIO(handle.read()))
     document = converter.convert(stream).document
-    chunker = HybridChunker(
-        tokenizer=HuggingFaceTokenizer(
-            tokenizer=AutoTokenizer.from_pretrained(opts["tokenizer"]),
-            max_tokens=int(opts["max_tokens"]),
+    chunker_key = (str(opts["tokenizer"]), int(opts["max_tokens"]))
+    chunker = _CHUNKERS.get(chunker_key)
+    if chunker is None:
+        chunker = HybridChunker(
+            tokenizer=HuggingFaceTokenizer(
+                tokenizer=AutoTokenizer.from_pretrained(chunker_key[0]),
+                max_tokens=chunker_key[1],
+            )
         )
-    )
+        _CHUNKERS[chunker_key] = chunker
     chunks: list[dict[str, Any]] = []
     chunk: Any
     for chunk in chunker.chunk(document):
@@ -198,7 +206,33 @@ def cmd_docling(path: str, opts: dict[str, Any]) -> dict[str, Any]:
 COMMANDS = {"inspect": cmd_inspect, "light": cmd_light, "docling": cmd_docling}
 
 
+def serve() -> None:
+    """Warm mode: answer JSON-line requests on stdin until stdin closes.
+
+    Heavy objects (Docling converters, tokenizer, OCR engine) are cached in this process, so only
+    the first request pays for loading models. An exception while handling one request is
+    reported as `crashed` (the parent treats it like a crash and may recycle this process).
+    """
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr  # library chatter must never corrupt the JSON channel
+    real_stdout.write(json.dumps({"ready": True}) + "\n")
+    real_stdout.flush()
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            request = json.loads(line)
+            result = COMMANDS[request["command"]](request["path"], request.get("opts", {}))
+        except BaseException as exc:
+            result = {"ok": False, "crashed": True, "message": f"{type(exc).__name__}: {exc}"[:400]}
+        real_stdout.write(json.dumps(result) + "\n")
+        real_stdout.flush()
+
+
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "serve":
+        serve()
+        return
     real_stdout = sys.stdout
     sys.stdout = sys.stderr  # library chatter must never corrupt the JSON channel
     command, path, raw_opts = sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "{}"

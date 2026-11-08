@@ -11,9 +11,10 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.ingestion.orphans import sweep_orphans
 from app.ingestion.outbox import dispatch_outbox
 from app.ingestion.pipeline import run_ingestion
-from app.ingestion.purge import PurgeBusyError, purge_document
+from app.ingestion.purge import PurgeBusyError, purge_document, purge_user
 from app.ingestion.reconcile import reconcile
 from app.ingestion.runtime import get_runtime
 from app.ingestion.store import IngestionStore
@@ -108,3 +109,39 @@ def reconcile_task() -> dict[str, int]:
         "failed_exhausted": report.failed_exhausted,
         "purges_requeued": report.purges_requeued,
     }
+
+
+@celery_app.task(name="ingestion.sweep_orphans")
+def sweep_orphans_task() -> dict[str, int]:
+    rt = get_runtime()
+    with rt.session_factory() as session:
+        report = sweep_orphans(session, rt.storage, rt.settings)
+    return {
+        "scanned": report.scanned,
+        "orphans_deleted": report.orphans_deleted,
+        "skipped_young": report.skipped_young,
+        "skipped_unknown_layout": report.skipped_unknown_layout,
+        "temp_cleaned": report.temp_cleaned,
+    }
+
+
+@celery_app.task(
+    name="ingestion.purge_user",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def purge_user_task(self: Task[Any, Any], user_id: str) -> str:
+    rt = get_runtime()
+    retries = int(self.request.retries or 0)
+    try:
+        return purge_user(rt, uuid.UUID(user_id))
+    except PurgeBusyError as exc:
+        raise self.retry(exc=exc, countdown=5, max_retries=60) from exc
+    except Exception as exc:
+        log.warning("user_purge_failed", user_id=user_id, error=type(exc).__name__)
+        raise self.retry(
+            exc=exc,
+            countdown=backoff_seconds(retries, base=rt.settings.ingestion_retry_base_s),
+            max_retries=rt.settings.ingestion_max_attempts + 5,
+        ) from exc

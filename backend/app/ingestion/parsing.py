@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
@@ -20,7 +21,14 @@ from typing import Any, Protocol
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.ingestion.chunking import Chunk, chunk_pages, contextual_text, estimate_tokens
-from app.ingestion.sandbox import SandboxError, SandboxLimits, module_command, run_sandboxed
+from app.ingestion.sandbox import (
+    PersistentSandbox,
+    SandboxError,
+    SandboxLimits,
+    SandboxPool,
+    module_command,
+    run_sandboxed,
+)
 from app.ingestion.textclean import clean_pages
 from app.ingestion.textnorm import PageText, meaningful_chars
 
@@ -68,19 +76,75 @@ def _error_from_sandbox(exc: SandboxError) -> ParseError:
 
 
 class SandboxedPdfParser:
+    """Parses PDFs in sandboxed children. In `pool` mode the children stay warm between calls."""
+
     def __init__(self, settings: Settings) -> None:
         self._s = settings
+        self._lock = threading.Lock()
+        self._pools: dict[str, SandboxPool] = {}
+
+    def close(self) -> None:
+        with self._lock:
+            pools, self._pools = list(self._pools.values()), {}
+        for pool in pools:
+            pool.close()
+
+    @property
+    def spawn_count(self) -> int:
+        return sum(pool.spawn_count for pool in self._pools.values())
+
+    def _pool(self, kind: str, *, size: int, memory_mb: int) -> SandboxPool:
+        with self._lock:
+            pool = self._pools.get(kind)
+            if pool is None:
+                argv, env = module_command(_MODULE, "serve")
+                s = self._s
+
+                def factory() -> PersistentSandbox:
+                    return PersistentSandbox(
+                        argv,
+                        limits=SandboxLimits(timeout_s=s.parse_timeout_max_s, memory_mb=memory_mb),
+                        extra_env=env,
+                        max_jobs=s.sandbox_recycle_jobs,
+                    )
+
+                pool = self._pools[kind] = SandboxPool(factory, size)
+            return pool
+
+    def _call(
+        self,
+        kind: str,
+        command: str,
+        path: Path,
+        opts: dict[str, Any],
+        *,
+        timeout_s: float,
+        memory_mb: int,
+        pool_size: int,
+    ) -> dict[str, Any]:
+        if self._s.sandbox_mode == "pool":
+            pool = self._pool(kind, size=pool_size, memory_mb=memory_mb)
+            return pool.call(
+                {"command": command, "path": str(path), "opts": opts}, timeout_s=timeout_s
+            )
+        argv, env = module_command(_MODULE, command, path, json.dumps(opts))
+        return run_sandboxed(
+            argv, limits=SandboxLimits(timeout_s=timeout_s, memory_mb=memory_mb), extra_env=env
+        )
 
     # ------------------------------------------------------------------ inspect (cheap)
 
     def inspect(self, path: Path) -> InspectResult:
         s = self._s
-        argv, env = module_command(_MODULE, "inspect", path, "{}")
         try:
-            result = run_sandboxed(
-                argv,
-                limits=SandboxLimits(timeout_s=s.inspect_timeout_s, memory_mb=s.inspect_memory_mb),
-                extra_env=env,
+            result = self._call(
+                "inspect",
+                "inspect",
+                path,
+                {},
+                timeout_s=s.inspect_timeout_s,
+                memory_mb=s.inspect_memory_mb,
+                pool_size=s.inspect_pool_size,
             )
         except SandboxError as exc:
             raise _error_from_sandbox(exc) from exc
@@ -109,11 +173,14 @@ class SandboxedPdfParser:
         timeout = min(
             s.parse_timeout_max_s, s.parse_timeout_base_s + s.parse_timeout_per_page_s * page_count
         )
-        argv, env = module_command(_MODULE, command, path, json.dumps(self._options()))
-        result = run_sandboxed(
-            argv,
-            limits=SandboxLimits(timeout_s=timeout, memory_mb=s.parse_memory_mb),
-            extra_env=env,
+        result = self._call(
+            "parse",
+            command,
+            path,
+            self._options(),
+            timeout_s=timeout,
+            memory_mb=s.parse_memory_mb,
+            pool_size=s.parse_pool_size,
         )
         if not result.get("ok"):
             raise ParseError(

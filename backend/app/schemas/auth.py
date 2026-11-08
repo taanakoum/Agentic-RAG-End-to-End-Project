@@ -116,3 +116,12 @@ class MfaDisableRequest(_Strict):
 class MfaStatusResponse(BaseModel):
     enabled: bool
     recovery_codes_remaining: int
+
+
+class DeleteAccountRequest(_Strict):
+    password: str = Field(min_length=1, max_length=1024, repr=False)
+    code: str | None = Field(default=None, max_length=32, repr=False)  # required when MFA is on
+
+
+class DeletionAccepted(BaseModel):
+    message: str = "Your account is locked and scheduled for permanent deletion."

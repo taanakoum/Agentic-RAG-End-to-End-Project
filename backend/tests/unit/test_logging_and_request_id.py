@@ -57,3 +57,20 @@ def test_invalid_request_ids_are_replaced(bad: str | None) -> None:
 
 def test_valid_request_id_is_kept() -> None:
     assert sanitize_request_id("abc-DEF_123.456") == "abc-DEF_123.456"
+
+
+def test_console_tracebacks_never_print_local_variables(capsys: pytest.CaptureFixture[str]) -> None:
+    """rich tracebacks print local variables (secrets!); the console renderer must not use them."""
+    configure_logging(level="INFO", json_output=False, service="t")
+
+    def handler() -> None:
+        local_secret = "LOCAL-SECRET-VALUE-12345"  # a local variable on purpose
+        raise RuntimeError(f"boom {len(local_secret)}")
+
+    try:
+        handler()
+    except RuntimeError as exc:
+        get_logger("t").error("failed", exc_info=exc)
+    out = capsys.readouterr().out
+    assert "RuntimeError" in out
+    assert "LOCAL-SECRET-VALUE-12345" not in out

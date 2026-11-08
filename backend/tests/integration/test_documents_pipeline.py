@@ -12,13 +12,11 @@ import subprocess
 import sys
 import threading
 import uuid
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import httpx2
 import pytest
-from celery.contrib.testing.worker import start_worker
 from fastapi import FastAPI
 from sqlalchemy import text
 
@@ -27,11 +25,11 @@ from app.core.config import get_settings
 from app.infra.container import Infrastructure
 from app.ingestion import pipeline as pipeline_module
 from app.ingestion import purge as purge_module
-from app.ingestion.embedding import FastEmbedEmbedder, set_embedder_factory
+from app.ingestion.embedding import FastEmbedEmbedder
 from app.ingestion.outbox import dispatch_outbox
 from app.ingestion.parsing import SandboxedPdfParser
 from app.ingestion.reconcile import reconcile
-from app.ingestion.runtime import WorkerRuntime, set_runtime
+from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.store import IngestionStore
 from app.services.document_service import DocumentService
 from app.tasks.celery_app import celery_app
@@ -51,27 +49,6 @@ from tests.pdfs import blank_pdf, mixed_pdf, sample_text_pdf, scanned_pdf, secti
 pytestmark = pytest.mark.integration
 
 BACKEND = Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture(scope="module")
-def runtime() -> Iterator[WorkerRuntime]:
-    set_embedder_factory(HashEmbedder)
-    rt = WorkerRuntime.create(get_settings())
-    set_runtime(rt)
-    with start_worker(celery_app, pool="solo", perform_ping_check=False, shutdown_timeout=30):
-        yield rt
-    set_runtime(None)
-    rt.close()
-    set_embedder_factory(None)
-
-
-@pytest.fixture
-def embedder(runtime: WorkerRuntime) -> HashEmbedder:
-    emb = cast(HashEmbedder, runtime.embedder)
-    emb.fail_next = 0
-    emb.on_dense = None
-    emb.calls = 0
-    return emb
 
 
 @pytest.fixture(autouse=True)

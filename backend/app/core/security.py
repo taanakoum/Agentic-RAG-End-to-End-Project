@@ -16,6 +16,7 @@ from argon2 import PasswordHasher, Type
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from email_validator import EmailNotValidError, validate_email
 
+from app.core.breached import is_breached_password
 from app.core.config import Settings
 
 # ---------------------------------------------------------------- email
@@ -54,6 +55,16 @@ _COMMON_PASSWORDS = frozenset(
 )
 
 
+PASSWORD_MESSAGES = {
+    "password_too_short": "Password is too short.",
+    "password_too_long": "Password is too long.",
+    "password_blank": "Password must not be blank.",
+    "password_too_repetitive": "Password is too repetitive.",
+    "password_too_guessable": "Password is too easy to guess.",
+    "password_breached": "This password appears in lists of commonly used or breached passwords.",
+}
+
+
 def password_policy_violations(password: str, *, email: str, settings: Settings) -> list[str]:
     """Return policy violation codes (empty list = acceptable)."""
     problems: list[str] = []
@@ -69,6 +80,8 @@ def password_policy_violations(password: str, *, email: str, settings: Settings)
     local = email.split("@", 1)[0].lower()
     if lowered in _COMMON_PASSWORDS or (len(local) >= 4 and local in lowered):
         problems.append("password_too_guessable")
+    if is_breached_password(password):
+        problems.append("password_breached")
     return problems
 
 

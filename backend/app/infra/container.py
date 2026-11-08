@@ -5,6 +5,7 @@ Holds only connections/pools (no per-user mutable state), so the API stays state
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient
@@ -24,6 +25,7 @@ from app.database.session import (
 from app.infra.clients import create_async_qdrant, create_async_redis
 from app.infra.email import EmailSender, create_email_sender
 from app.infra.rate_limit import RateLimiter
+from app.ingestion.parsing import SandboxedPdfParser
 from app.storage.base import ObjectStorage
 from app.storage.factory import create_storage
 
@@ -40,6 +42,8 @@ class Infrastructure:
     rate_limiter: RateLimiter
     email: EmailSender
     sync_engine: Engine
+    parser: SandboxedPdfParser
+    validation_executor: ThreadPoolExecutor
     sync_session_factory: sessionmaker[Session]
 
     @classmethod
@@ -58,11 +62,17 @@ class Infrastructure:
             rate_limiter=RateLimiter(redis),
             email=create_email_sender(settings),
             sync_engine=sync_engine,
+            parser=SandboxedPdfParser(settings),
+            validation_executor=ThreadPoolExecutor(
+                max_workers=settings.inspect_pool_size + 2, thread_name_prefix="validate"
+            ),
             sync_session_factory=sync_session_factory(sync_engine),
         )
 
     async def close(self) -> None:
         await self.engine.dispose()
         self.sync_engine.dispose()
+        self.validation_executor.shutdown(wait=False, cancel_futures=True)
+        self.parser.close()
         await self.redis.aclose()
         await self.qdrant.close()

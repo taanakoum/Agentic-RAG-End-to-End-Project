@@ -6,10 +6,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.refresh_token import RefreshToken
+from app.models.user import User
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,15 @@ class SessionRow:
     created_at: datetime
     last_used_at: datetime
     user_agent: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class AuthRow:
+    user_id: uuid.UUID
+    email: str
+    email_verified: bool
+    is_active: bool
+    session_live: bool
 
 
 class RefreshTokenRepository:
@@ -118,3 +128,31 @@ class RefreshTokenRepository:
             stmt = stmt.where(RefreshToken.family_id != keep_family)
         result = await self._session.execute(stmt.values(revoked_at=now, revoked_reason=reason))
         return int(getattr(result, "rowcount", 0) or 0)
+
+    async def auth_row(
+        self, user_id: uuid.UUID, session_id: uuid.UUID, *, now: datetime
+    ) -> AuthRow | None:
+        """User + liveness of the token's session in ONE round trip (runs on every request).
+
+        The session must belong to the same user: a family id alone is never trusted.
+        """
+        live = exists().where(
+            RefreshToken.family_id == session_id,
+            RefreshToken.user_id == User.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        row = (
+            await self._session.execute(
+                select(
+                    User.id,
+                    User.email,
+                    User.email_verified_at.is_not(None),
+                    User.is_active,
+                    live,
+                ).where(User.id == user_id)
+            )
+        ).first()
+        if row is None:
+            return None
+        return AuthRow(row[0], row[1], bool(row[2]), bool(row[3]), bool(row[4]))

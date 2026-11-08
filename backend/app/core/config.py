@@ -75,11 +75,13 @@ class Settings(BaseSettings):
     access_token_ttl_s: int = Field(default=900, ge=60, le=3600)
     refresh_token_ttl_s: int = Field(default=14 * 24 * 3600, ge=300)
     password_min_length: int = Field(default=12, ge=8)
+    require_verified_email: bool = False
     password_max_length: int = Field(default=128, ge=32, le=1024)
     argon2_memory_kib: int = Field(default=65536, ge=1024)
     argon2_time_cost: int = Field(default=3, ge=1)
     argon2_parallelism: int = Field(default=4, ge=1, le=64)
     max_concurrent_hashes: int = Field(default=4, ge=1, le=64)
+    thread_pool_size: int = Field(default=32, ge=4, le=256)
 
     # One-time tokens, email, MFA
     reset_token_ttl_s: int = Field(default=3600, ge=60)
@@ -131,6 +133,10 @@ class Settings(BaseSettings):
     rl_upload_limit: int = Field(default=30, ge=1)
     rl_upload_window_s: int = Field(default=3600, ge=1)
     pdf_pipeline: Literal["docling", "light"] = "docling"
+    sandbox_mode: Literal["pool", "oneshot"] = "pool"  # warm children vs one process per call
+    inspect_pool_size: int = Field(default=2, ge=1, le=16)
+    parse_pool_size: int = Field(default=1, ge=1, le=8)  # per worker process; each child is heavy
+    sandbox_recycle_jobs: int = Field(default=25, ge=1)
     inspect_timeout_s: float = Field(default=20.0, gt=0)
     inspect_memory_mb: int = Field(default=1024, ge=64)
     parse_timeout_base_s: float = Field(default=60.0, gt=0)
@@ -161,6 +167,8 @@ class Settings(BaseSettings):
     reconcile_processing_ttl_s: int = Field(default=1020, ge=1)
     reconcile_purge_ttl_s: int = Field(default=300, ge=1)
     ingestion_max_attempts: int = Field(default=5, ge=1)
+    orphan_grace_s: int = Field(default=3600, ge=0)
+    orphan_sweep_interval_s: float = Field(default=3600.0, ge=1.0)
     ingestion_retry_base_s: float = Field(default=5.0, gt=0)
 
     # Celery
@@ -196,6 +204,8 @@ class Settings(BaseSettings):
         if self.smtp_use_ssl and self.smtp_starttls:
             raise ValueError("smtp_use_ssl and smtp_starttls are mutually exclusive")
         if self.app_env == "prod":
+            if not self.require_verified_email:
+                raise ValueError("prod requires require_verified_email=true")
             if self.email_backend != "smtp" or not self.smtp_host:
                 raise ValueError("prod requires email_backend=smtp and smtp_host")
             if self.argon2_memory_kib < 19456 or self.argon2_time_cost < 2:

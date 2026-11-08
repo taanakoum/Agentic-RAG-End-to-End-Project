@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, status
 
 from app.core.exceptions import error_responses
-from app.dependencies.auth import CurrentUser, DocumentServiceDep
+from app.dependencies.auth import CurrentUser, DocumentServiceDep, VerifiedUser
 from app.schemas.documents import JobAccepted, JobPublic
 
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
@@ -27,6 +27,6 @@ async def get_job(
     responses=error_responses(401, 404, 409),
 )
 async def retry_job(
-    job_id: uuid.UUID, current: CurrentUser, service: DocumentServiceDep
+    job_id: uuid.UUID, current: VerifiedUser, service: DocumentServiceDep
 ) -> JobAccepted:
     return await service.retry(current, job_id)

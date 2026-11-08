@@ -47,4 +47,6 @@ def build_document_service(session: AsyncSession, infra: Infrastructure) -> Docu
         storage=infra.storage,
         limiter=infra.rate_limiter,
         sync_session_factory=infra.sync_session_factory,
+        parser=infra.parser,
+        validation_executor=infra.validation_executor,
     )

@@ -217,3 +217,14 @@ class IngestionStore:
     def add_outbox(self, kind: str, payload: dict[str, Any]) -> None:
         self._s.add(OutboxEvent(kind=kind, payload=payload))
         self._s.commit()
+
+    def has_processing_job_for_user(self, user_id: uuid.UUID) -> bool:
+        row = self._s.execute(
+            select(IngestionJob.id)
+            .where(
+                IngestionJob.user_id == user_id,
+                IngestionJob.status == JobStatus.PROCESSING.value,
+            )
+            .limit(1)
+        ).first()
+        return row is not None

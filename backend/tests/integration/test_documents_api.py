@@ -608,6 +608,7 @@ def test_beat_schedule_registers_dispatcher_and_reconciler() -> None:
     assert {e["task"] for e in schedule.values()} == {
         "ingestion.dispatch_outbox",
         "ingestion.reconcile",
+        "ingestion.sweep_orphans",
     }
     assert timedelta(seconds=schedule["dispatch-outbox"]["schedule"]) <= timedelta(seconds=30)
     assert utcnow() is not None

@@ -47,6 +47,10 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
                 "task": "ingestion.reconcile",
                 "schedule": settings.reconcile_interval_s,
             },
+            "sweep-orphans": {
+                "task": "ingestion.sweep_orphans",
+                "schedule": settings.orphan_sweep_interval_s,
+            },
         },
     )
     return app

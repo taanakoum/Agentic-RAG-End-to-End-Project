@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
+from typing import cast
 
 import httpx2
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from celery.contrib.testing.worker import start_worker
 from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.core.config import Settings, get_settings
 from app.infra.container import Infrastructure
+from app.ingestion.embedding import set_embedder_factory
+from app.ingestion.runtime import WorkerRuntime, set_runtime
 from app.main import create_app
+from app.tasks import ingestion as ingestion_tasks
+from app.tasks.celery_app import celery_app
+from tests.fakes import HashEmbedder
 from tests.helpers import delete_keys
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
@@ -113,3 +120,34 @@ async def client_with_settings(
         await c.aclose()
     for own in extra:
         await own.close()
+
+
+# ---------------------------------------------------------------- real Celery worker (opt-in)
+
+
+REGISTERED_TASKS = (ingestion_tasks.process_document,)  # importing the module registers the tasks
+
+
+@pytest.fixture(scope="module")
+def runtime() -> Iterator[WorkerRuntime]:
+    """A real Celery worker (thread, solo pool) against real Redis/PostgreSQL/Qdrant/storage.
+
+    Only the embedding model is replaced by the deterministic test-only HashEmbedder.
+    """
+    set_embedder_factory(HashEmbedder)
+    rt = WorkerRuntime.create(get_settings())
+    set_runtime(rt)
+    with start_worker(celery_app, pool="solo", perform_ping_check=False, shutdown_timeout=30):
+        yield rt
+    set_runtime(None)
+    rt.close()
+    set_embedder_factory(None)
+
+
+@pytest.fixture
+def embedder(runtime: WorkerRuntime) -> HashEmbedder:
+    emb = cast(HashEmbedder, runtime.embedder)
+    emb.fail_next = 0
+    emb.on_dense = None
+    emb.calls = 0
+    return emb

@@ -44,6 +44,9 @@ class WorkerRuntime:
     def close(self) -> None:
         self.engine.dispose()
         self.qdrant.close()
+        close_parser = getattr(self.parser, "close", None)
+        if callable(close_parser):
+            close_parser()
 
 
 _runtime: WorkerRuntime | None = None

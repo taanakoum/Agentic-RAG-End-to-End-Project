@@ -6,8 +6,10 @@ import hashlib
 import io
 import os
 import socket
+import time
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 
@@ -241,3 +243,80 @@ async def test_ready_endpoint_reports_s3_storage_health(
     assert bad.status_code == 503
     assert bad.json()["components"]["storage"]["status"] == "error"
     assert "missing-bucket" not in bad.text
+
+
+def test_iter_objects_lists_keys_sizes_and_times(storage: ObjectStorage) -> None:
+    storage.put("u1/d1/a.pdf", io.BytesIO(b"12345"))
+    storage.put("u1/d2/b.pdf", io.BytesIO(b"1234567"))
+    storage.put("u2/d3/c.pdf", io.BytesIO(b"x"))
+    everything = {o.key: o for o in storage.iter_objects()}
+    assert set(everything) == {"u1/d1/a.pdf", "u1/d2/b.pdf", "u2/d3/c.pdf"}
+    assert everything["u1/d2/b.pdf"].size == 7
+    assert all(o.modified_at.tzinfo is not None for o in everything.values())
+    assert {o.key for o in storage.iter_objects("u1")} == {"u1/d1/a.pdf", "u1/d2/b.pdf"}
+    assert list(storage.iter_objects("nobody")) == []
+
+
+def test_iter_objects_handles_many_objects(storage: ObjectStorage) -> None:
+    for i in range(30):
+        storage.put(f"bulk/{i}", io.BytesIO(b"x"))
+    assert len(list(storage.iter_objects("bulk"))) == 30
+
+
+def test_sweep_temporary_removes_only_stale_partial_writes(
+    storage: ObjectStorage, tmp_path: Path
+) -> None:
+    if isinstance(storage, S3ObjectStorage):
+        client = storage.client
+        upload = client.create_multipart_upload(Bucket=storage.bucket, Key="half-done/object")
+        # NOTE: the moto emulator reports a fixed bogus 2010 "Initiated" date, so "a just-started
+        # upload is left alone" cannot be shown here (see test_s3_sweep_leaves_young_uploads_alone).
+        assert storage.sweep_temporary(0) == 1  # abandoned upload: aborted
+        assert client.list_multipart_uploads(Bucket=storage.bucket).get("Uploads", []) == []
+        assert upload["UploadId"]
+    else:
+        stale = tmp_path / "store" / ".tmp" / "stale"
+        stale.write_bytes(b"x")
+        os.utime(stale, (time.time() - 7200, time.time() - 7200))
+        fresh = tmp_path / "store" / ".tmp" / "fresh"
+        fresh.write_bytes(b"x")
+        assert storage.sweep_temporary(3600) == 1
+        assert not stale.exists()
+        assert fresh.exists()
+
+
+class _Paginator:
+    def __init__(self, uploads: list[dict[str, Any]]) -> None:
+        self._uploads = uploads
+
+    def paginate(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"Uploads": self._uploads}]
+
+
+class _StubS3:
+    """Minimal client returning realistic multipart timestamps (the emulator's are bogus)."""
+
+    def __init__(self, initiated: list[datetime]) -> None:
+        self._initiated = initiated
+        self.aborted: list[str] = []
+
+    def get_paginator(self, name: str) -> Any:
+        assert name == "list_multipart_uploads"
+        uploads = [
+            {"Key": f"k{i}", "UploadId": f"u{i}", "Initiated": when}
+            for i, when in enumerate(self._initiated)
+        ]
+        return _Paginator(uploads)
+
+    def abort_multipart_upload(self, *, Bucket: str, Key: str, UploadId: str) -> None:
+        self.aborted.append(UploadId)
+
+
+def test_s3_sweep_leaves_young_uploads_alone() -> None:
+    now = datetime.now(UTC)
+    stub = _StubS3(
+        [now - timedelta(seconds=10), now - timedelta(hours=5), now - timedelta(minutes=30)]
+    )
+    storage = S3ObjectStorage(cast(Any, stub), "bucket")
+    assert storage.sweep_temporary(3600) == 1
+    assert stub.aborted == ["u1"]  # only the 5-hour-old one

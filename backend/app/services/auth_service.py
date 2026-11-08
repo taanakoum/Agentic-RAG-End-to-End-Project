@@ -20,6 +20,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.core.ownership import require_owner
 from app.core.security import (
+    PASSWORD_MESSAGES,
     InvalidEmailError,
     PasswordService,
     TokenError,
@@ -40,13 +41,6 @@ from app.repositories.users import UserRepository
 log = get_logger(__name__)
 
 _EMAIL_UNIQUE_CONSTRAINT = "uq_users_email_normalized"
-_PASSWORD_MESSAGES = {
-    "password_too_short": "Password is too short.",
-    "password_too_long": "Password is too long.",
-    "password_blank": "Password must not be blank.",
-    "password_too_repetitive": "Password is too repetitive.",
-    "password_too_guessable": "Password is too easy to guess.",
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +65,7 @@ class AuthenticatedUser:
     id: uuid.UUID
     email: str
     session_id: uuid.UUID
+    email_verified: bool = False
 
 
 def _utc_now() -> datetime:
@@ -117,7 +112,7 @@ class AuthService:
         if violations:
             raise RequestValidationAppError(
                 details=[
-                    ErrorDetail(field="password", code=v, message=_PASSWORD_MESSAGES[v])
+                    ErrorDetail(field="password", code=v, message=PASSWORD_MESSAGES[v])
                     for v in violations
                 ]
             )
@@ -319,9 +314,14 @@ class AuthService:
             raise AuthenticationError(
                 "Invalid or expired access token.", code="INVALID_TOKEN"
             ) from exc
-        user = await self._users.get_by_id(claims.user_id)
-        if user is None or not user.is_active:
+        row = await self._tokens.auth_row(claims.user_id, claims.session_id, now=self._clock())
+        if row is None or not row.is_active:
             raise AuthenticationError("Invalid or expired access token.", code="INVALID_TOKEN")
-        if not await self._tokens.family_is_active(claims.session_id, now=self._clock()):
+        if not row.session_live:
             raise AuthenticationError("Session has ended.", code="SESSION_REVOKED")
-        return AuthenticatedUser(id=user.id, email=user.email, session_id=claims.session_id)
+        return AuthenticatedUser(
+            id=row.user_id,
+            email=row.email,
+            session_id=claims.session_id,
+            email_verified=row.email_verified,
+        )

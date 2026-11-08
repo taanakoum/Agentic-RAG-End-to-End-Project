@@ -8,7 +8,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.dependencies.infra import get_db_session, get_infra
 from app.infra.container import Infrastructure
 from app.services.account_service import AccountService
@@ -68,3 +68,15 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
+
+
+async def get_verified_user(current: CurrentUser, infra: InfraDep) -> AuthenticatedUser:
+    """Like CurrentUser, but when REQUIRE_VERIFIED_EMAIL is on the email must be verified."""
+    if infra.settings.require_verified_email and not current.email_verified:
+        raise AuthorizationError(
+            "Verify your email address to use this feature.", code="EMAIL_NOT_VERIFIED"
+        )
+    return current
+
+
+VerifiedUser = Annotated[AuthenticatedUser, Depends(get_verified_user)]

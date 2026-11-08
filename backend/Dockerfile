@@ -21,4 +21,6 @@ COPY --chown=app:app backend/ /app/backend/
 USER app
 EXPOSE 8000
 # Default command is the API; the worker overrides it in docker-compose.yml.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# One process per core is the usual starting point; WEB_CONCURRENCY overrides it. Each process
+# has its own event loop, DB pool and warm sandbox, so throughput scales with processes.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --workers ${WEB_CONCURRENCY:-2}"]

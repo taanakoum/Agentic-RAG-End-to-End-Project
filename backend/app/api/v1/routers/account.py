@@ -5,15 +5,28 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Response, status
 
 from app.core.exceptions import error_responses
-from app.dependencies.auth import AccountServiceDep, ClientIpDep, CurrentUser, InfraDep
+from app.dependencies.auth import (
+    AccountServiceDep,
+    ClientIpDep,
+    CurrentUser,
+    InfraDep,
+    MfaServiceDep,
+)
 from app.schemas.auth import (
     AcceptedResponse,
     ChangePasswordRequest,
+    DeleteAccountRequest,
+    DeletionAccepted,
     ForgotPasswordRequest,
     ResetPasswordRequest,
     VerifyEmailRequest,
 )
-from app.services.background import send_password_reset_email, send_verification_email
+from app.services.background import (
+    kick_dispatcher,
+    send_emails,
+    send_password_reset_email,
+    send_verification_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["account"])
 
@@ -24,11 +37,16 @@ router = APIRouter(prefix="/auth", tags=["account"])
     responses=error_responses(401, 422, 429, 503),
 )
 async def change_password(
-    body: ChangePasswordRequest, current: CurrentUser, service: AccountServiceDep
+    body: ChangePasswordRequest,
+    current: CurrentUser,
+    service: AccountServiceDep,
+    infra: InfraDep,
+    background: BackgroundTasks,
 ) -> Response:
     await service.change_password(
         current, current_password=body.current_password, new_password=body.new_password
     )
+    background.add_task(send_emails, infra, service.take_notifications())
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -57,9 +75,14 @@ async def forgot_password(
     responses=error_responses(400, 422, 429, 503),
 )
 async def reset_password(
-    body: ResetPasswordRequest, service: AccountServiceDep, ip: ClientIpDep
+    body: ResetPasswordRequest,
+    service: AccountServiceDep,
+    ip: ClientIpDep,
+    infra: InfraDep,
+    background: BackgroundTasks,
 ) -> Response:
     await service.reset_password(token=body.token, new_password=body.new_password, client_ip=ip)
+    background.add_task(send_emails, infra, service.take_notifications())
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -90,3 +113,25 @@ async def verify_email(
 ) -> Response:
     await service.verify_email(token=body.token, client_ip=ip)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/account",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DeletionAccepted,
+    responses=error_responses(401, 422, 429, 503),
+)
+async def delete_account(
+    body: DeleteAccountRequest,
+    current: CurrentUser,
+    service: AccountServiceDep,
+    mfa: MfaServiceDep,
+    infra: InfraDep,
+    background: BackgroundTasks,
+) -> DeletionAccepted:
+    """Permanently delete the account and all its data. Needs the password (and an MFA code)."""
+    await mfa.require_second_factor(current, body.code)
+    await service.delete_account(current, password=body.password)
+    background.add_task(send_emails, infra, service.take_notifications())
+    background.add_task(kick_dispatcher, infra)
+    return DeletionAccepted()
