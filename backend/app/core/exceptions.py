@@ -124,6 +124,18 @@ class DocumentValidationError(AppError):
     message = "The uploaded file is not a valid PDF."
 
 
+class DocumentEncryptedError(DocumentValidationError):
+    status_code = 422
+    code = "DOCUMENT_ENCRYPTED"
+    message = "Password-protected PDFs are not supported. Remove the password and upload again."
+
+
+class DocumentTooManyPagesError(DocumentValidationError):
+    status_code = 422
+    code = "DOCUMENT_TOO_MANY_PAGES"
+    message = "The PDF has more pages than the allowed maximum."
+
+
 class DocumentParsingError(AppError):
     status_code = 422
     code = "DOCUMENT_PARSING_FAILED"

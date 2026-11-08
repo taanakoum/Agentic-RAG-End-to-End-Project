@@ -9,11 +9,18 @@ from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient
 from redis.asyncio import Redis as AsyncRedis
+from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.security import PasswordService
-from app.database.session import async_session_factory, create_async_db_engine
+from app.database.session import (
+    async_session_factory,
+    create_async_db_engine,
+    create_sync_db_engine,
+    sync_session_factory,
+)
 from app.infra.clients import create_async_qdrant, create_async_redis
 from app.infra.email import EmailSender, create_email_sender
 from app.infra.rate_limit import RateLimiter
@@ -32,11 +39,14 @@ class Infrastructure:
     passwords: PasswordService
     rate_limiter: RateLimiter
     email: EmailSender
+    sync_engine: Engine
+    sync_session_factory: sessionmaker[Session]
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
         engine = create_async_db_engine(settings)
         redis = create_async_redis(settings)
+        sync_engine = create_sync_db_engine(settings)
         return cls(
             settings=settings,
             engine=engine,
@@ -47,9 +57,12 @@ class Infrastructure:
             passwords=PasswordService(settings),
             rate_limiter=RateLimiter(redis),
             email=create_email_sender(settings),
+            sync_engine=sync_engine,
+            sync_session_factory=sync_session_factory(sync_engine),
         )
 
     async def close(self) -> None:
         await self.engine.dispose()
+        self.sync_engine.dispose()
         await self.redis.aclose()
         await self.qdrant.close()

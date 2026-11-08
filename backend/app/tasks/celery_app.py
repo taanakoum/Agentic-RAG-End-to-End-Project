@@ -19,7 +19,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         "agentic_rag",
         broker=settings.redis_url,
         backend=settings.redis_url,
-        include=["app.tasks.system"],
+        include=["app.tasks.system", "app.tasks.ingestion"],
     )
     app.conf.update(
         task_serializer="json",
@@ -38,6 +38,16 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         # Redis re-delivers unacked tasks after this; must exceed the hard time limit.
         broker_transport_options={"visibility_timeout": settings.celery_task_time_limit_s + 300},
         worker_hijack_root_logger=False,
+        beat_schedule={
+            "dispatch-outbox": {
+                "task": "ingestion.dispatch_outbox",
+                "schedule": settings.outbox_dispatch_interval_s,
+            },
+            "reconcile-ingestion": {
+                "task": "ingestion.reconcile",
+                "schedule": settings.reconcile_interval_s,
+            },
+        },
     )
     return app
 

@@ -44,7 +44,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     register_exception_handlers(app)
     # add_middleware: the last one added is outermost. Request ID must wrap everything else.
-    app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        max_body_bytes=settings.max_body_bytes,
+        # multipart overhead on top of the PDF limit; the service enforces the exact PDF limit
+        path_limits={"/api/v1/documents/upload": settings.max_pdf_bytes + 1024 * 1024},
+    )
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,

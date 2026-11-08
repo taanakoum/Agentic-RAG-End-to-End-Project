@@ -13,7 +13,13 @@ from app.dependencies.infra import get_db_session, get_infra
 from app.infra.container import Infrastructure
 from app.services.account_service import AccountService
 from app.services.auth_service import AuthenticatedUser, AuthService
-from app.services.factory import build_account_service, build_auth_service, build_mfa_service
+from app.services.document_service import DocumentService
+from app.services.factory import (
+    build_account_service,
+    build_auth_service,
+    build_document_service,
+    build_mfa_service,
+)
 from app.services.mfa_service import MfaService
 
 # auto_error=False so that a missing header yields our standard 401 error body.
@@ -35,7 +41,12 @@ def get_mfa_service(session: SessionDep, infra: InfraDep) -> MfaService:
     return build_mfa_service(session, infra)
 
 
+def get_document_service(session: SessionDep, infra: InfraDep) -> DocumentService:
+    return build_document_service(session, infra)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 MfaServiceDep = Annotated[MfaService, Depends(get_mfa_service)]
 

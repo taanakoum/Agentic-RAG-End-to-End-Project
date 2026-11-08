@@ -60,9 +60,15 @@ def _too_large_body() -> bytes:
 class BodySizeLimitMiddleware:
     """Rejects bodies over the limit: by Content-Length up front, and while streaming."""
 
-    def __init__(self, app: Any, *, max_body_bytes: int) -> None:
+    def __init__(
+        self, app: Any, *, max_body_bytes: int, path_limits: dict[str, int] | None = None
+    ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
+        self.path_limits = path_limits or {}
+
+    def _limit_for(self, path: str) -> int:
+        return self.path_limits.get(path, self.max_body_bytes)
 
     async def _reject(self, send: Any) -> None:
         body = _too_large_body()
@@ -83,10 +89,11 @@ class BodySizeLimitMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        limit = self._limit_for(str(scope.get("path", "")))
         declared = next((v for k, v in scope["headers"] if k == b"content-length"), None)
         if declared is not None:
             try:
-                if int(declared) > self.max_body_bytes:
+                if int(declared) > limit:
                     await self._reject(send)
                     return
             except ValueError:
@@ -104,7 +111,7 @@ class BodySizeLimitMiddleware:
             message: _Message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_body_bytes:
+                if received > limit:
                     # Answer 413 ourselves and tell the app the client is gone. (Raising here would
                     # be caught by FastAPI's body parsing and turned into a 400.)
                     rejected = True

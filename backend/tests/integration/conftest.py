@@ -42,8 +42,36 @@ async def _clean_state(infra: Infrastructure) -> None:
         await session.execute(text("TRUNCATE users CASCADE"))
         await session.commit()
     await delete_keys(infra.redis, "rl:*")
+    for pattern in ("celery", "unacked*", "_kombu*"):  # leftovers from earlier tests' broker use
+        await delete_keys(infra.redis, pattern)
+    async with infra.session_factory() as session:
+        await session.execute(text("TRUNCATE outbox_events"))
+        await session.commit()
+    _reset_vectors_and_objects()
     for eml in get_settings().email_file_dir.glob("*.eml"):
         eml.unlink()
+
+
+def _reset_vectors_and_objects() -> None:
+    """Fresh Qdrant collection and object store for every test."""
+    import shutil
+
+    from qdrant_client import QdrantClient
+
+    from app.ingestion.indexing import collection_name
+
+    settings = get_settings()
+    client = QdrantClient(url=settings.qdrant_url, timeout=30)
+    try:
+        if client.collection_exists(collection_name(settings)):
+            client.delete_collection(collection_name(settings))
+    finally:
+        client.close()
+    root = settings.storage_local_root
+    if root.exists():
+        for child in root.iterdir():
+            shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink()
+        (root / ".tmp").mkdir(exist_ok=True)
 
 
 def build_app(settings: Settings, infra: Infrastructure) -> FastAPI:
