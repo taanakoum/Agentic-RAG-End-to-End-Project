@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 1 (BLOCKED on KI-003: no Docker/WSL)
-**Next step:** User installs Docker Desktop (or approves an alternative in docs/IMPLEMENTATION_PLAN.md). Then run `/next-phase` to start Phase 1: read docs/spec/01-architecture.md + 07-testing-eval-ops.md, read current official docs, scaffold backend, `uv sync` on Python 3.13.
+**Current phase:** 1 (dev work can proceed on native services, KI-005; G1 itself BLOCKED on KI-003: no Docker/WSL)
+**Next step:** Run `/next-phase` for Phase 1 (Foundation): start services with `powershell -File scripts/dev_services.ps1 start`, read docs/spec/01-architecture.md + 07-testing-eval-ops.md and current official docs, scaffold backend, `uv sync` on Python 3.13. G1 verification needs Docker.
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates

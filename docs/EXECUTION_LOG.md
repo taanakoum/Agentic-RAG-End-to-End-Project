@@ -34,3 +34,16 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Wrote scripts/dev_services.ps1 (start/stop/status; all services bound to 127.0.0.1; Redis AOF on).
 - Attempted `scripts/dev_services.ps1 start`: the command was DENIED by the auto-mode classifier (no reason given). I did not try to work around it. Services have NOT been started, so nothing is verified yet.
 - Next step: user runs `powershell -File scripts/dev_services.ps1 start` (or allows the command), then verify: `psql` login, `redis-cli ping`/PING via redis-py, `curl http://127.0.0.1:6333/healthz`, and persistence across a stop/start.
+
+---
+## Entry 3: Native dev services started and verified (dev only)
+- Date: 2026-11-08. Bash permission granted by the user for `scripts/dev_services.ps1 start`.
+- Defects found and fixed in scripts/dev_services.ps1: (1) `pg_ctl start | Out-Null` hung because the postgres child kept the caller's pipe open; (2) `Start-Process -Wait` on pg_ctl also hung (waits on the postgres child). Fixed by launching pg_ctl without -Wait, with redirected output, and polling port 5432. Side effect while debugging: stopping a hung task killed Postgres's console (crash 0xC0000142 in postgres.log, clean abort, no data loss); restarted normally.
+- Verification (actual output):
+  - Postgres: `select version()` -> "PostgreSQL 17.7 on x86_64-windows ... 64-bit" (password auth). Wrong password -> "password authentication failed for user postgres".
+  - Redis: `redis-cli ping` -> PONG; `redis_version:8.10.3`, standalone.
+  - Qdrant: `/healthz` -> "healthz check passed"; version 1.20.0; collection create + upsert -> ok.
+  - Persistence: wrote a PG row, Redis key, Qdrant point; ran `dev_services.ps1 stop` (all 4 ports down) then `start` (all 4 UP); read back "persist-me" from PG, Redis, and Qdrant (point 1 with payload). Test data was then removed.
+  - Script start/stop/status finally runs to completion (exit without hanging).
+- Scope: DEV ONLY on native Windows binaries. Does NOT satisfy G1/G11/G12 (Docker still required, KI-003 open).
+- Next step: Phase 1 (Foundation) using native services for dev/integration; Docker-dependent G1 items stay pending. Read docs/spec/01-architecture.md and 07-testing-eval-ops.md plus current official docs first.

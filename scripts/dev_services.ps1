@@ -20,7 +20,14 @@ function Show-Status {
 
 switch ($Action) {
   'start' {
-    if (-not (Test-Port 5432)) { & "$PgBin\pg_ctl.exe" -D $PgData -l "$Logs\postgres.log" -w start | Out-Null }
+    if (-not (Test-Port 5432)) {
+      # Start-Process with redirected output so the postgres child does not inherit (and hold open) the caller's pipe.
+      # No -Wait: Start-Process -Wait would also wait for the long-running postgres child. Poll the port instead.
+      Start-Process -WindowStyle Hidden -FilePath "$PgBin\pg_ctl.exe" `
+        -ArgumentList '-D',"`"$PgData`"",'-l',"`"$Logs\postgres.log`"",'start' `
+        -RedirectStandardOutput "$Logs\pg_ctl.out.log" -RedirectStandardError "$Logs\pg_ctl.err.log"
+      for ($i = 0; $i -lt 30 -and -not (Test-Port 5432); $i++) { Start-Sleep -Seconds 1 }
+    }
     if (-not (Test-Port 6379)) {
       Start-Process -WindowStyle Hidden -FilePath $Redis.FullName -WorkingDirectory (Join-Path $Root 'data\redis') `
         -ArgumentList '--bind','127.0.0.1','--port','6379','--appendonly','yes','--dir',(Join-Path $Root 'data\redis') `
