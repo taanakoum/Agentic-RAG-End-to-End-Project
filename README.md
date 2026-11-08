@@ -39,3 +39,6 @@ Tests never touch the dev database: `backend/tests/conftest.py` forces `rag_test
 
 ## Documents
 Supported uploads: PDF, DOCX, TXT, MD, CSV. PDFs are parsed with Docling (OCR only for pages without a text layer), everything is parsed in a sandboxed child process, chunked, embedded (FastEmbed dense + BM25 sparse) and indexed in Qdrant. Licences and cost: docs/LICENSES.md.
+
+## Search
+`POST /api/v1/search` runs hybrid retrieval (dense + BM25 sparse, RRF fusion, cross-encoder rerank) over the caller's own completed documents. Design and measured results: docs/ARCHITECTURE_DECISIONS.md ADR-022, evaluation/reports/retrieval_eval.md. Reproduce: `PYTHONPATH=backend;. uv run --no-sync python evaluation/retrieval/run_eval.py`.

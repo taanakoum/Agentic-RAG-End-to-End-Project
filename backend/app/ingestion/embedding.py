@@ -23,6 +23,10 @@ class Embedder(Protocol):
 
     def embed_sparse(self, texts: Sequence[str]) -> list[SparseVec]: ...
 
+    def embed_query_dense(self, text: str) -> list[float]: ...
+
+    def embed_query_sparse(self, text: str) -> SparseVec: ...
+
 
 class FastEmbedEmbedder:
     """BAAI/bge-small-en-v1.5 dense vectors + Qdrant/bm25 sparse vectors, both run locally."""
@@ -62,6 +66,16 @@ class FastEmbedEmbedder:
             SparseVec([int(i) for i in e.indices], [float(v) for v in e.values])
             for e in self._sparse_model().embed(list(texts))
         ]
+
+    def embed_query_dense(self, text: str) -> list[float]:
+        """Query-side embedding (models may apply a query instruction); same dimension as docs."""
+        vec = next(iter(self._dense_model().query_embed(text)))
+        return [float(x) for x in vec]
+
+    def embed_query_sparse(self, text: str) -> SparseVec:
+        """BM25 query side: unique stemmed tokens with weight 1 (no document-length weighting)."""
+        e = next(iter(self._sparse_model().query_embed(text)))
+        return SparseVec([int(i) for i in e.indices], [float(v) for v in e.values])
 
 
 EmbedderFactory = Callable[[Settings], Embedder]

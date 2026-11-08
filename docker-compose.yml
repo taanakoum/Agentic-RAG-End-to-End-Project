@@ -93,11 +93,13 @@ services:
     environment:
       <<: *backend-env
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2} # API processes; each has its own loop, DB pool, warm sandbox
+      WARM_MODELS_ON_STARTUP: "true" # load embedding + reranker models in the background at start
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - objects:/data/objects
       - outbox:/data/outbox
+      - models:/data/models # shared model cache (query embedding + reranker)
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -115,7 +117,8 @@ services:
     stop_grace_period: 30s
     deploy:
       resources:
-        limits: { memory: 1536m }
+        # each API process loads the embedding + reranker models (~1 GB each): size to WEB_CONCURRENCY
+        limits: { memory: 4g }
 
   worker:
     image: agentic-rag-backend

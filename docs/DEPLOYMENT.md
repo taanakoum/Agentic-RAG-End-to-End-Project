@@ -42,6 +42,8 @@ An S3-compatible store can replace the local volume (see ADR-011; verified again
 - Sandbox limits on Linux use `RLIMIT_DATA`; this path is implemented but only the Windows Job
   Object path has been exercised (KI-020). The self-check above is the verification step.
 
+- Retrieval models (embedding + BAAI/bge-reranker-v2-m3 int8, ~0.6 GB download) are cached in the `models` volume, now mounted by api and worker. Each API process loads them (`WARM_MODELS_ON_STARTUP=true` in compose); the api memory limit was raised to 4g for `WEB_CONCURRENCY=2` (UNVERIFIED, KI-025). Search latency on CPU: ~10 ms hybrid, ~2.2 s with the default reranker (KI-023); set `RERANK_ENABLED=false` for the fast path.
+
 ## Native development (what was actually verified)
 `scripts/dev_services.ps1` starts PostgreSQL, Redis and Qdrant from `C:\Users\ali_a\devtools`.
 Run tests with `export UV_PROJECT_ENVIRONMENT=C:/Users/ali_a/devtools/venv` then

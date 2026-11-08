@@ -166,6 +166,27 @@ class Settings(BaseSettings):
     sparse_model: str = "Qdrant/bm25"
     embedding_batch_size: int = Field(default=32, ge=1, le=512)
     qdrant_chunks_collection: str = "chunks"
+
+    # Retrieval (docs/spec/04-retrieval.md). Depths are per ranker before fusion.
+    retrieval_dense_limit: int = Field(default=40, ge=1, le=500)
+    retrieval_sparse_limit: int = Field(default=40, ge=1, le=500)
+    rrf_k: int = Field(default=60, ge=1, le=1000)
+    retrieval_top_k: int = Field(default=8, ge=1, le=100)
+    retrieval_max_top_k: int = Field(default=30, ge=1, le=100)
+    retrieval_timeout_s: float = Field(default=8.0, gt=0)
+    retrieval_max_query_chars: int = Field(default=1000, ge=10, le=10000)
+    retrieval_max_scope_documents: int = Field(default=50, ge=1, le=1000)
+    # Dense query prefix (e.g. BGE's retrieval instruction); empty = none. Chosen by evaluation.
+    dense_query_prefix: str = ""
+    rerank_enabled: bool = True
+    reranker_model: str = "BAAI/bge-reranker-v2-m3-int8"
+    rerank_candidates: int = Field(default=5, ge=1, le=200)
+    rerank_timeout_s: float = Field(default=10.0, gt=0)
+    rerank_max_chars: int = Field(default=2000, ge=100)
+    inference_threads: int = Field(default=2, ge=1, le=32)
+    warm_models_on_startup: bool = False
+    rl_search_limit: int = Field(default=120, ge=1)
+    rl_search_window_s: int = Field(default=60, ge=1)
     outbox_batch_size: int = Field(default=50, ge=1, le=500)
     outbox_dispatch_interval_s: float = Field(default=5.0, ge=1.0)
     reconcile_interval_s: float = Field(default=60.0, ge=5.0)

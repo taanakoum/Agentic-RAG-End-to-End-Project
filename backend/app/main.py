@@ -16,6 +16,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import BodySizeLimitMiddleware, RequestIdMiddleware
 from app.infra.container import Infrastructure
+from app.retrieval.warmup import warm_models
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,9 +36,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         infra = Infrastructure.create(settings)
         app.state.infra = infra
         log.info("startup_complete", env=settings.app_env)
+        warmup: asyncio.Task[bool] | None = None
+        if settings.warm_models_on_startup:
+            warmup = asyncio.create_task(warm_models(settings, infra.inference_executor))
         try:
             yield
         finally:
+            if warmup is not None:
+                warmup.cancel()
             await infra.close()
             log.info("shutdown_complete")
 

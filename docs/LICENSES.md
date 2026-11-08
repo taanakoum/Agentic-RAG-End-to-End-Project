@@ -16,6 +16,7 @@ Parsing and ML stack (all free, all run locally, no API keys, no network at quer
 Docling (MIT), RapidOCR (Apache-2.0, PP-OCR ONNX models bundled), pypdf (BSD), pypdfium2
 (Apache-2.0/BSD), FastEmbed (Apache-2.0) with BAAI/bge-small-en-v1.5 (MIT) and Qdrant/bm25
 (Apache-2.0), onnxruntime (MIT), PyTorch CPU (BSD-3; needed by Docling's layout model).
+Rerankers (all run locally via FastEmbed/ONNX): BAAI/bge-reranker-v2-m3 (Apache-2.0, default); for evaluation only Xenova/ms-marco-MiniLM-L-6/L-12 (Apache-2.0) and jinaai/jina-reranker-v1-turbo-en (Apache-2.0). jina-reranker-v2-base-multilingual is CC-BY-NC-4.0 (non-commercial) and was deliberately NOT used.
 Docling's layout/table models are downloaded from Hugging Face on first use (free, cached under
 `MODEL_CACHE_DIR`).
 

@@ -14,3 +14,4 @@ storage/
 htmlcov/
 node_modules/
 graphify-out/
+evaluation/.cache/

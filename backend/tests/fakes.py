@@ -65,3 +65,45 @@ class HashEmbedder:
             items = sorted(counts.items())
             out.append(SparseVec([i for i, _ in items], [float(c) for _, c in items]))
         return out
+
+    def embed_query_dense(self, text: str) -> list[float]:
+        return self.embed_dense([text])[0]
+
+    def embed_query_sparse(self, text: str) -> SparseVec:
+        return self.embed_sparse([text])[0]
+
+
+class KeywordReranker:
+    """Deterministic cross-encoder stand-in: score = how many query words the passage contains.
+
+    Records the threads it ran on and can be made slow or failing, to test the surrounding logic
+    (off-the-event-loop execution, timeouts, graceful fallback) without a model download.
+    """
+
+    model_name = "test-keyword-reranker"
+
+    def __init__(self, _settings: Settings | None = None) -> None:
+        self.calls = 0
+        self.threads: list[str] = []
+        self.delay_s = 0.0
+        self.fail = False
+        self.prefer: str | None = None  # passages containing this word score highest
+
+    def score(self, query: str, passages: Sequence[str]) -> list[float]:
+        import time
+
+        self.calls += 1
+        self.threads.append(threading.current_thread().name)
+        if self.delay_s:
+            time.sleep(self.delay_s)
+        if self.fail:
+            raise RuntimeError("simulated reranker failure")
+        words = set(_tokens(query))
+        out: list[float] = []
+        for passage in passages:
+            tokens = set(_tokens(passage))
+            score = float(len(words & tokens))
+            if self.prefer and self.prefer in tokens:
+                score += 100.0
+            out.append(score)
+        return out

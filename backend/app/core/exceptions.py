@@ -154,6 +154,12 @@ class RetrievalError(AppError):
     message = "Retrieval failed."
 
 
+class RetrievalTimeoutError(RetrievalError):
+    status_code = 504
+    code = "RETRIEVAL_TIMEOUT"
+    message = "Retrieval took too long."
+
+
 class AgentExecutionError(AppError):
     status_code = 500
     code = "AGENT_EXECUTION_FAILED"

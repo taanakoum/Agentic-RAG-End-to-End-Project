@@ -45,6 +45,7 @@ class Infrastructure:
     parser: SandboxedPdfParser
     validation_executor: ThreadPoolExecutor
     sync_session_factory: sessionmaker[Session]
+    inference_executor: ThreadPoolExecutor
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
@@ -67,12 +68,16 @@ class Infrastructure:
                 max_workers=settings.inspect_pool_size + 2, thread_name_prefix="validate"
             ),
             sync_session_factory=sync_session_factory(sync_engine),
+            inference_executor=ThreadPoolExecutor(
+                max_workers=settings.inference_threads, thread_name_prefix="inference"
+            ),
         )
 
     async def close(self) -> None:
         await self.engine.dispose()
         self.sync_engine.dispose()
         self.validation_executor.shutdown(wait=False, cancel_futures=True)
+        self.inference_executor.shutdown(wait=False, cancel_futures=True)
         self.parser.close()
         await self.redis.aclose()
         await self.qdrant.close()

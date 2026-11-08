@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
@@ -98,6 +99,24 @@ class DocumentRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def readable(
+        self, user_id: uuid.UUID, only: Sequence[uuid.UUID] | None = None
+    ) -> dict[uuid.UUID, tuple[str, int]]:
+        """Documents this user may retrieve from: owned, COMPLETED and not deleted.
+
+        Returns id -> (filename, current version). `only` narrows to the given ids; ids that are
+        not readable simply do not appear, so a caller cannot tell "not yours" from "unknown".
+        """
+        stmt = select(Document.id, Document.filename, Document.version).where(
+            Document.user_id == user_id,
+            Document.status == DocumentStatus.COMPLETED.value,
+            Document.deleted_at.is_(None),
+        )
+        if only is not None:
+            stmt = stmt.where(Document.id.in_(list(only)))
+        rows = await self._session.execute(stmt)
+        return {row.id: (row.filename, row.version) for row in rows}
 
     def _latest_job_id(self) -> Any:
         return (

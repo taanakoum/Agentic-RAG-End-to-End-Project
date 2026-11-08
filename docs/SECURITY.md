@@ -63,3 +63,11 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - Logging: the console renderer uses plain tracebacks (rich tracebacks print local variables, which can include secrets); regression test.
 - JWT key rotation (`kid`) exists, so the earlier "no key rotation" note above is out of date.
 - Still open: admin-forced MFA (KI-011), fixed-window rate limits (KI-012).
+
+## Retrieval authorization (Phase 4)
+- Three layers, all tested (and mutation-checked): (1) PostgreSQL decides which documents the caller may read (owned, `completed`, not deleted; optional narrowing by `document_ids`); (2) EVERY Qdrant query (dense and sparse) carries `user_id` AND the allowed `document_id` set in its filter, and each returned payload's `user_id` is re-checked; (3) after the search, hits are re-validated against PostgreSQL (deleted, re-indexed or no longer completed documents are dropped) before anything is returned.
+- Tombstoned documents disappear from search instantly, before their vectors are purged. Documents that are being (re)processed are not searchable.
+- Unknown, foreign and unreadable document ids are indistinguishable (empty result, same status).
+- Search is rate limited per user (`RL_SEARCH_LIMIT` per `RL_SEARCH_WINDOW_S`), fails closed if Redis is down, and bounded: query length, scope size, top-k, per-stage timeouts.
+- Retrieved text is untrusted input for the LLM (prompt-injection handling arrives with generation, Phase 6); search results never contain storage keys or user ids.
+- Known limit: the Qdrant filter lists the readable document ids; users with thousands of documents produce large filters (bounded by `RETRIEVAL_MAX_SCOPE_DOCUMENTS` only when the caller narrows). Revisit with a status payload field if this becomes a bottleneck.

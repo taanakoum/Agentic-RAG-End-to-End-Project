@@ -65,3 +65,11 @@ Users, sessions/chat, memory, feedback, evaluation endpoints (see docs/spec/06-a
 - `DELETE /auth/account` body `{password, code?}` (Bearer; `code` required when MFA is on) -> 202 `{status:"deleting"}`; errors 401, 422 (`incorrect_password`), 429, 503. All sessions end immediately.
 - Document and ingestion routes return 403 `EMAIL_NOT_VERIFIED` when `REQUIRE_VERIFIED_EMAIL=true` and the email is unverified.
 - Registration and password change/reset reject breached passwords (422 validation detail `password_breached`).
+
+## Search (Phase 4; Bearer required, email must be verified when `REQUIRE_VERIFIED_EMAIL=true`)
+| Method | Path | Body | Success | Errors |
+|---|---|---|---|---|
+| POST | /search | `{query (1..1000 chars), document_ids? (max 50), top_k? (1..100, capped by RETRIEVAL_MAX_TOP_K)}` | 200 `{query, mode, results[], degraded[], timings_ms{}}` | 401, 403 `EMAIL_NOT_VERIFIED`, 422 (`query_empty`, `query_too_long`, `too_many_documents`, schema), 429, 503, 504 `RETRIEVAL_TIMEOUT`, 500 `RETRIEVAL_FAILED` |
+
+Each result is citation-ready: `{chunk_id, document_id, document_name, page_number, page_end, section_path, heading, text, scores{dense_rank, sparse_rank, dense_score, sparse_score, fused_score, rerank_score}}`.
+The search covers only the caller's COMPLETED, non-deleted documents. `document_ids` narrows the scope; ids that are unknown, foreign or not completed are silently ignored (same response either way). `mode` is `hybrid_rerank` (or `hybrid` when `RERANK_ENABLED=false`). `degraded` lists handled soft failures: `dense_unavailable`, `sparse_unavailable`, `rerank_timeout`, `rerank_unavailable`.

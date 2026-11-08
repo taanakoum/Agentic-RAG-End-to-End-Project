@@ -9,6 +9,7 @@ from app.services.account_service import AccountService
 from app.services.auth_service import AuthService
 from app.services.document_service import DocumentService
 from app.services.mfa_service import MfaService
+from app.services.retrieval_service import RetrievalService
 
 
 def build_auth_service(session: AsyncSession, infra: Infrastructure) -> AuthService:
@@ -49,4 +50,14 @@ def build_document_service(session: AsyncSession, infra: Infrastructure) -> Docu
         sync_session_factory=infra.sync_session_factory,
         parser=infra.parser,
         validation_executor=infra.validation_executor,
+    )
+
+
+def build_retrieval_service(session: AsyncSession, infra: Infrastructure) -> RetrievalService:
+    return RetrievalService(
+        session=session,
+        settings=infra.settings,
+        qdrant=infra.qdrant,
+        executor=infra.inference_executor,
+        limiter=infra.rate_limiter,
     )
