@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.chat.checkpointer import CheckpointerProvider
 from app.core.config import Settings
 from app.core.security import PasswordService
 from app.database.session import (
@@ -46,6 +47,7 @@ class Infrastructure:
     validation_executor: ThreadPoolExecutor
     sync_session_factory: sessionmaker[Session]
     inference_executor: ThreadPoolExecutor
+    checkpointer: CheckpointerProvider
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
@@ -68,12 +70,14 @@ class Infrastructure:
                 max_workers=settings.inspect_pool_size + 2, thread_name_prefix="validate"
             ),
             sync_session_factory=sync_session_factory(sync_engine),
+            checkpointer=CheckpointerProvider(settings),
             inference_executor=ThreadPoolExecutor(
                 max_workers=settings.inference_threads, thread_name_prefix="inference"
             ),
         )
 
     async def close(self) -> None:
+        await self.checkpointer.close()
         await self.engine.dispose()
         self.sync_engine.dispose()
         self.validation_executor.shutdown(wait=False, cancel_futures=True)

@@ -1,0 +1,78 @@
+"""PostgreSQL-backed LangGraph checkpointer (never in-memory), shared per process.
+
+One `AsyncConnectionPool` per process feeds `AsyncPostgresSaver`. The pool is opened lazily on
+first use (so processes that never run a graph hold no extra connections). Table creation
+(`setup()`, idempotent, versioned by the library) is serialised across processes with a
+PostgreSQL advisory lock so several API workers starting together cannot race.
+
+psycopg's async mode cannot run on Windows' default ProactorEventLoop; `use_selector_loop()`
+selects the selector loop there (a no-op elsewhere, and containers run Linux).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+
+from app.core.config import Settings
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
+
+_SETUP_LOCK_KEY = 7_262_024_001  # arbitrary, project-wide constant for pg_advisory_lock
+
+
+def use_selector_loop() -> None:
+    """Call before the event loop is created (process start, test collection)."""
+    if sys.platform == "win32":
+        # deprecated only from Python 3.14 (project pins 3.13); revisit with loop_factory then
+        asyncio.set_event_loop_policy(  # pyright: ignore[reportDeprecated]
+            asyncio.WindowsSelectorEventLoopPolicy()  # pyright: ignore[reportDeprecated]
+        )
+
+
+def conninfo(settings: Settings) -> str:
+    url = settings.database_url(driver="psycopg").set(drivername="postgresql")
+    return url.render_as_string(hide_password=False)
+
+
+class CheckpointerProvider:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._pool: AsyncConnectionPool | None = None  # pyright: ignore[reportMissingTypeArgument]
+        self._saver: AsyncPostgresSaver | None = None
+        self._lock = asyncio.Lock()
+
+    async def get(self) -> AsyncPostgresSaver:
+        if self._saver is not None:
+            return self._saver
+        async with self._lock:
+            if self._saver is None:
+                pool: AsyncConnectionPool = AsyncConnectionPool(  # pyright: ignore[reportMissingTypeArgument]
+                    conninfo(self._settings),
+                    min_size=1,
+                    max_size=self._settings.checkpoint_pool_size,
+                    kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+                    open=False,
+                )
+                await pool.open(wait=True, timeout=self._settings.db_pool_timeout_s)
+                saver = AsyncPostgresSaver(pool)  # pyright: ignore[reportArgumentType]
+                async with pool.connection() as guard:
+                    await guard.execute("SELECT pg_advisory_lock(%s)", (_SETUP_LOCK_KEY,))
+                    try:
+                        await saver.setup()
+                    finally:
+                        await guard.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
+                self._pool, self._saver = pool, saver
+                log.info("checkpointer_ready")
+        assert self._saver is not None  # noqa: S101 - narrowing for the type checker
+        return self._saver
+
+    async def close(self) -> None:
+        pool, self._pool, self._saver = self._pool, None, None
+        if pool is not None:
+            await pool.close()

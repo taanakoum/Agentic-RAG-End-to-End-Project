@@ -11,12 +11,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.chat.checkpointer import use_selector_loop
 from app.core.config import Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import BodySizeLimitMiddleware, RequestIdMiddleware
 from app.infra.container import Infrastructure
 from app.retrieval.warmup import warm_models
+
+use_selector_loop()  # psycopg async (LangGraph checkpointer) needs it on Windows
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

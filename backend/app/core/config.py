@@ -185,6 +185,13 @@ class Settings(BaseSettings):
     rerank_max_chars: int = Field(default=2000, ge=100)
     inference_threads: int = Field(default=2, ge=1, le=32)
     warm_models_on_startup: bool = False
+    # Sessions and chat turns (docs/spec/05)
+    chat_lease_s: int = Field(default=120, ge=5)
+    chat_max_message_chars: int = Field(default=8000, ge=100, le=100000)
+    chat_history_messages: int = Field(default=20, ge=1, le=200)
+    rl_session_create_limit: int = Field(default=120, ge=1)
+    rl_session_create_window_s: int = Field(default=3600, ge=1)
+    checkpoint_pool_size: int = Field(default=10, ge=1, le=100)
     rl_search_limit: int = Field(default=120, ge=1)
     rl_search_window_s: int = Field(default=60, ge=1)
     outbox_batch_size: int = Field(default=50, ge=1, le=500)

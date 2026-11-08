@@ -15,11 +15,17 @@ log = get_logger(__name__)
 KIND_INGEST = "ingest_document"
 KIND_PURGE = "purge_document"
 KIND_PURGE_USER = "purge_user"
+KIND_PURGE_CONVERSATION = "purge_conversation"
+KIND_INDEX_MEMORY = "index_memory"
+KIND_PURGE_MEMORY = "purge_memory"
 
 TASK_BY_KIND = {
     KIND_INGEST: "ingestion.process_document",
     KIND_PURGE: "ingestion.purge_document",
     KIND_PURGE_USER: "ingestion.purge_user",
+    KIND_PURGE_CONVERSATION: "chat.purge_conversation",
+    KIND_INDEX_MEMORY: "memory.index_memory",
+    KIND_PURGE_MEMORY: "memory.purge_memory",
 }
 
 
@@ -29,6 +35,10 @@ def _args_for(event: OutboxEvent) -> list[str]:
         return [str(payload["job_id"])]
     if event.kind == KIND_PURGE_USER:
         return [str(payload["user_id"])]
+    if event.kind == KIND_PURGE_CONVERSATION:
+        return [str(payload["conversation_id"]), str(payload["user_id"])]
+    if event.kind in (KIND_INDEX_MEMORY, KIND_PURGE_MEMORY):
+        return [str(payload["memory_id"]), str(payload["user_id"])]
     return [str(payload["document_id"]), str(payload["user_id"])]
 
 

@@ -10,9 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.logging import get_logger
-from app.ingestion.outbox import KIND_INGEST, KIND_PURGE, KIND_PURGE_USER
+from app.ingestion.outbox import (
+    KIND_INGEST,
+    KIND_PURGE,
+    KIND_PURGE_CONVERSATION,
+    KIND_PURGE_USER,
+)
 from app.ingestion.states import JobStatus
 from app.ingestion.store import IngestionStore, utcnow
+from app.models.chat import Conversation
 from app.models.document import Document, IngestionJob, OutboxEvent
 from app.models.user import User
 
@@ -26,6 +32,7 @@ class ReconcileReport:
     failed_exhausted: int = 0
     purges_requeued: int = 0
     user_purges_requeued: int = 0
+    conversation_purges_requeued: int = 0
 
 
 def _recent_event_exists(
@@ -116,9 +123,29 @@ def reconcile(session: Session, settings: Settings) -> ReconcileReport:
             store.add_outbox(KIND_PURGE_USER, {"user_id": str(user_id)})
             user_purges += 1
 
+    # 5. deleted conversations whose purge has not finished: publish the purge again
+    conversation_purges = 0
+    for conversation_id, owner_id in session.execute(
+        select(Conversation.id, Conversation.user_id).where(
+            Conversation.deleted_at.is_not(None), Conversation.deleted_at < purge_cutoff
+        )
+    ).all():
+        if not _recent_event_exists(
+            session,
+            KIND_PURGE_CONVERSATION,
+            "conversation_id",
+            str(conversation_id),
+            since=purge_cutoff,
+        ):
+            store.add_outbox(
+                KIND_PURGE_CONVERSATION,
+                {"conversation_id": str(conversation_id), "user_id": str(owner_id)},
+            )
+            conversation_purges += 1
+
     pruned = prune_outbox(session)
-    report = ReconcileReport(queued, recovered, exhausted, purges, user_purges)
-    if any((queued, recovered, exhausted, purges, user_purges, pruned)):
+    report = ReconcileReport(queued, recovered, exhausted, purges, user_purges, conversation_purges)
+    if any((queued, recovered, exhausted, purges, user_purges, conversation_purges, pruned)):
         log.info(
             "reconciled",
             requeued_queued=queued,

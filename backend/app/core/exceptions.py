@@ -100,6 +100,12 @@ class ConcurrencyConflictError(AppError):
     message = "The resource is being modified by another request."
 
 
+class IdempotencyKeyReusedError(AppError):
+    status_code = 409
+    code = "IDEMPOTENCY_KEY_REUSED"
+    message = "This idempotency key was already used with a different message."
+
+
 class PayloadTooLargeError(AppError):
     status_code = 413
     code = "PAYLOAD_TOO_LARGE"

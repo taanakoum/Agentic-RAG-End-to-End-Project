@@ -54,6 +54,14 @@ async def _clean_state(infra: Infrastructure) -> None:
     async with infra.session_factory() as session:
         await session.execute(text("TRUNCATE outbox_events"))
         await session.commit()
+    async with infra.session_factory() as session:  # checkpoint tables exist once a graph has run
+        await session.execute(
+            text(
+                "DO $$ BEGIN IF to_regclass('public.checkpoints') IS NOT NULL THEN "
+                "TRUNCATE checkpoints, checkpoint_blobs, checkpoint_writes; END IF; END $$"
+            )
+        )
+        await session.commit()
     _reset_vectors_and_objects()
     for eml in get_settings().email_file_dir.glob("*.eml"):
         eml.unlink()

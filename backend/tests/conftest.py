@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pytest
 
+from app.chat.checkpointer import use_selector_loop
+
+use_selector_loop()  # before any event loop exists (psycopg async needs it on Windows)
+
 _TMP_ROOT = Path(tempfile.mkdtemp(prefix="rag-tests-"))
 
 # Environment variables take priority over .env, so tests can never touch the dev database.

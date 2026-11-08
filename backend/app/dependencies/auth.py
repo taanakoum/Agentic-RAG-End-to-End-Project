@@ -13,10 +13,12 @@ from app.dependencies.infra import get_db_session, get_infra
 from app.infra.container import Infrastructure
 from app.services.account_service import AccountService
 from app.services.auth_service import AuthenticatedUser, AuthService
+from app.services.conversation_service import ConversationService
 from app.services.document_service import DocumentService
 from app.services.factory import (
     build_account_service,
     build_auth_service,
+    build_conversation_service,
     build_document_service,
     build_mfa_service,
     build_retrieval_service,
@@ -51,11 +53,16 @@ def get_retrieval_service(session: SessionDep, infra: InfraDep) -> RetrievalServ
     return build_retrieval_service(session, infra)
 
 
+def get_conversation_service(session: SessionDep, infra: InfraDep) -> ConversationService:
+    return build_conversation_service(session, infra)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 MfaServiceDep = Annotated[MfaService, Depends(get_mfa_service)]
 RetrievalServiceDep = Annotated[RetrievalService, Depends(get_retrieval_service)]
+ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
 
 
 def client_ip(request: Request) -> str:

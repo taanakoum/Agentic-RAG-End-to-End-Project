@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
+
+from app.chat.purge import delete_checkpoint_threads
 from app.core.logging import get_logger
 from app.ingestion.indexing import delete_document_points, delete_user_points
 from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.store import IngestionStore
+from app.models.chat import Conversation
 
 log = get_logger(__name__)
 
@@ -59,6 +63,12 @@ def purge_user(rt: WorkerRuntime, user_id: uuid.UUID) -> str:
             raise PurgeBusyError(str(user_id))
         delete_user_points(rt.qdrant, rt.settings, user_id=user_id)
         rt.storage.delete_prefix(str(user_id))
+        threads = list(
+            session.execute(
+                select(Conversation.thread_id).where(Conversation.user_id == user_id)
+            ).scalars()
+        )
+        delete_checkpoint_threads(session, threads)
         session.delete(user)  # sessions, tokens, MFA, documents and jobs cascade
         session.commit()
     log.info("user_purged", user_id=str(user_id))
