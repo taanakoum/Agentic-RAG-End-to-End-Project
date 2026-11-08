@@ -61,7 +61,10 @@ async def _check_storage(infra: Infrastructure) -> None:
 
 
 def _ping_workers(timeout: float) -> int:
-    replies = celery_app.control.inspect(timeout=timeout).ping() or {}
+    # A fresh, short-lived broker connection per probe: a pooled connection can be stale after a
+    # broker restart and would report "no workers" even though they have reconnected.
+    with celery_app.connection_for_read() as connection:
+        replies = celery_app.control.inspect(timeout=timeout, connection=connection).ping() or {}
     return len(replies)
 
 

@@ -10,3 +10,21 @@ Format: ID, date, context, options considered, decision, consequences. Required 
 
 ## ADR-002 (2026-11-08): Repo root is the project folder
 - Decision: spec layout is rooted directly here (`backend/`, `frontend/`, `docs/` ...) instead of a nested `agentic-rag-platform/` folder, since the folder already holds CLAUDE.md and docs.
+
+## ADR-001 update (2026-11-08)
+`uv sync` of the Phase 1 dependency set resolved and all tests ran on Python 3.13.12. Heavy ML dependencies (torch, sentence-transformers, langgraph) are not yet in the lock; revisit if resolution fails when they are added.
+
+## ADR-003 (2026-11-08): Celery/asyncio execution model
+- Context: spec requires one explicit model, no ad-hoc `asyncio.run()`.
+- Decision: Celery tasks are plain synchronous functions using synchronous clients (SQLAlchemy sync engine over psycopg, redis-py, qdrant-client). The API uses the async stack (asyncpg, redis.asyncio, AsyncQdrantClient). Alembic uses the sync psycopg engine.
+- Consequences: two DB drivers (asyncpg for the API, psycopg for workers/migrations; psycopg is also needed later for the LangGraph Postgres checkpointer). Celery config: acks_late, reject_on_worker_lost, prefetch 1, visibility_timeout = hard time limit + 300 s. On Windows dev, workers must use `--pool=solo` (prefork is unsupported); Docker/Linux uses prefork.
+
+## ADR-004 (2026-11-08): Object storage keys and adapter
+- Decision: synchronous `ObjectStorage` protocol. Keys are application-generated '/'-separated segments matching `[A-Za-z0-9_][A-Za-z0-9._-]{0,127}`; never derived from user filenames. Local adapter writes via temp file + fsync + `os.replace` (atomic), computes SHA-256 and size while streaming, enforces `max_bytes`, and verifies the resolved path stays inside the root. The S3-compatible adapter is deferred (KI-007).
+
+## ADR-005 (2026-11-08): Health endpoints
+- `/health/live` (no dependencies), `/health/ready` (PostgreSQL, Redis, Qdrant, storage; 503 on failure), `/health/workers` (Celery control ping; 503 if none). Unauthenticated; responses carry only ok/error per component, details go to logs. Worker ping uses a fresh broker connection per probe because a pooled connection went stale after a Redis restart (found in manual failure testing, see EXECUTION_LOG Entry 4).
+
+## ADR-006 (2026-11-08): Proceed to Phase 2 while G1 is blocked
+- Context: G1 needs Docker (KI-003). Phase 1 backend components are verified on native services; only the Docker artifacts are unverified.
+- Decision: continue with Phase 2 (its gate G2 needs only PostgreSQL/Redis, available natively). Phase 1 stays "TESTED (native), G1 BLOCKED" until Docker verifies it. Docker-dependent work is never marked VERIFIED.

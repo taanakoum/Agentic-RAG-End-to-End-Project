@@ -1,0 +1,138 @@
+# UNVERIFIED: never run (Docker is not installed on the dev machine; see KNOWN_ISSUES KI-003).
+# Usage: cp env.example .env  (set COMPOSE_POSTGRES_PASSWORD), then: docker compose up --build
+name: agentic-rag
+
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-dev}
+  LOG_JSON: "true"
+  POSTGRES_USER: rag_app
+  POSTGRES_PASSWORD: ${COMPOSE_POSTGRES_PASSWORD:?set COMPOSE_POSTGRES_PASSWORD in .env}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: rag
+  REDIS_URL: redis://redis:6379/0
+  QDRANT_URL: http://qdrant:6333
+  STORAGE_LOCAL_ROOT: /data/objects
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rag_app
+      POSTGRES_PASSWORD: ${COMPOSE_POSTGRES_PASSWORD:?set COMPOSE_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: rag
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_app -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  redis:
+    image: redis:8
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    restart: unless-stopped
+    volumes:
+      - qdrantdata:/qdrant/storage
+    healthcheck:
+      # The image has no curl/wget; use bash's /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf "GET /healthz HTTP/1.0\r\n\r\n" >&3
+          && head -n1 <&3 | grep -q 200'
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { memory: 2g }
+
+  migrate:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    image: agentic-rag-backend
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    environment: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    image: agentic-rag-backend
+    restart: unless-stopped
+    environment: *backend-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - objects:/data/objects
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=4).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  worker:
+    image: agentic-rag-backend
+    restart: unless-stopped
+    command:
+      - celery
+      - -A
+      - app.tasks.celery_app:celery_app
+      - worker
+      - --loglevel=INFO
+      - --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+    environment: *backend-env
+    volumes:
+      - objects:/data/objects
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits: { memory: 2g }
+
+volumes:
+  pgdata:
+  redisdata:
+  qdrantdata:
+  objects:

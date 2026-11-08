@@ -3,15 +3,15 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 1 (dev work can proceed on native services, KI-005; G1 itself BLOCKED on KI-003: no Docker/WSL)
-**Next step:** Run `/next-phase` for Phase 1 (Foundation): start services with `powershell -File scripts/dev_services.ps1 start`, read docs/spec/01-architecture.md + 07-testing-eval-ops.md and current official docs, scaffold backend, `uv sync` on Python 3.13. G1 verification needs Docker.
+**Current phase:** 2 (FastAPI + Auth). Phase 1 TESTED on native services; G1 still BLOCKED on Docker (KI-003, ADR-006)
+**Next step:** Phase 2: read docs/spec/02-auth-security.md and 06-api-errors-frontend.md; start services (`scripts/dev_services.ps1 start`); branch feature/phase-2-auth. Never mark Phase 1 / G1 VERIFIED without Docker.
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
 | Phase | Gate | Status | Evidence (log ref) |
 |---|---|---|---|
 | 0 Recon | - | VERIFIED | Log entry 1 |
-| 1 Foundation | G1 | BLOCKED | KI-003 |
+| 1 Foundation | G1 | TESTED (native); G1 BLOCKED on Docker | Log entry 4; KI-003, KI-009 |
 | 2 FastAPI + Auth | G2 | NOT_STARTED | |
 | 3 Ingestion | G3 | NOT_STARTED | |
 | 4 Retrieval | G4 | NOT_STARTED | |

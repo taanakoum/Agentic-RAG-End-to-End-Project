@@ -7,6 +7,7 @@ Execution model (ADR-003): tasks are plain synchronous functions that use synchr
 from __future__ import annotations
 
 from celery import Celery
+from celery.signals import setup_logging
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -51,6 +52,4 @@ def _configure_worker_logging(**_: object) -> None:
     )
 
 
-from celery.signals import setup_logging as _setup_logging  # noqa: E402
-
-_setup_logging.connect(_configure_worker_logging)
+setup_logging.connect(_configure_worker_logging)

@@ -45,7 +45,7 @@ markers = [
 line-length = 100
 target-version = "py313"
 src = ["backend"]
-extend-exclude = ["backend/migrations/versions", ".claude"]
+extend-exclude = ["backend/migrations/versions", ".claude", "docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF"]

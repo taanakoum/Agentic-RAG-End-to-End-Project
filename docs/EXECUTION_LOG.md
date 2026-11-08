@@ -47,3 +47,21 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
   - Script start/stop/status finally runs to completion (exit without hanging).
 - Scope: DEV ONLY on native Windows binaries. Does NOT satisfy G1/G11/G12 (Docker still required, KI-003 open).
 - Next step: Phase 1 (Foundation) using native services for dev/integration; Docker-dependent G1 items stay pending. Read docs/spec/01-architecture.md and 07-testing-eval-ops.md plus current official docs first.
+
+---
+## Entry 4: Phase 1 foundation implemented and tested on native services (G1 NOT verified)
+- Date: 2026-11-08. Branch feature/phase-1-foundation.
+- Built: pyproject (exact pins) + uv.lock on Python 3.13; Pydantic Settings (dev/test/prod rules); structlog logging with request IDs + secret redaction; async/sync SQLAlchemy engines with pooling; Alembic (sync psycopg, baseline migration 0001); object storage protocol + local adapter; Redis/Qdrant client factories; Celery app (acks_late etc.); `Infrastructure` container + FastAPI lifespan; request-ID ASGI middleware; `/api/v1/health/{live,ready,workers}`; Dockerfile + docker-compose.yml (UNVERIFIED); env.example; README; scripts/dev_services.ps1.
+- Commands run and ACTUAL results:
+  - `uv run --no-sync ruff check .` -> All checks passed. `ruff format --check .` -> 37 files already formatted.
+  - `uv run --no-sync pyright` (strict) -> 0 errors, 0 warnings.
+  - `uv run --no-sync pytest -q` -> 61 passed (46 unit, 15 integration; real PostgreSQL rag_test, Redis db 15, Qdrant, in-process real Celery worker). One third-party UserWarning from qdrant-client.
+  - Migrations: `alembic upgrade head` / `downgrade base` / `upgrade head` on rag_dev and in tests -> version 0001 then none then 0001.
+  - Manual smoke with real entrypoints (uvicorn on :8765 + `celery ... --pool=solo`): live 200; ready 200 (all 4 ok); workers 200.
+  - Failure recovery (API + worker running): stopping PG/Redis/Qdrant -> ready 503 with components error (storage ok); after restart -> ready 200 WITHOUT restarting the API.
+  - Defect found: after restarting only Redis, `/health/workers` returned 503 (stale pooled kombu connection in the API process) while the worker had actually reconnected. Fixed by using a fresh `connection_for_read()` per probe; re-test: 503 while Redis down, then 200 on three consecutive calls, and `echo.delay("after-restart").get()` returned "after-restart". No automated regression test for this (needs a broker restart); verified manually only.
+- Other defects fixed: alembic.ini `%` interpolation; alembic `prepend_sys_path` breaks on paths with spaces (set sys.path in env.py); `ruff format .` rewrote Python code blocks in docs/spec/05 (unintended; reverted from git, `docs` and `.claude` now excluded from ruff); pyright strict needed celery-types, httpx2 (starlette TestClient), explicit `Field(default=...)`.
+- Suppressions (all narrow, with reasons in code): 4 `pyright: ignore` for redis-py partially-typed API in infra/clients.py, 1 for pydantic-settings `_env_file` kwarg in config.py, 2 generic-dict typing in logging.py. No blanket suppressions.
+- NOT verified: Docker build/compose, health checks in containers, persistence across container restart, G1. Storage persistence across process restart: only logic-level (files on disk); not tested via restart.
+- Decision: ADR-006 (continue to Phase 2; G1 stays blocked). Usage: could not be measured.
+- Next step: Phase 2.
