@@ -40,3 +40,14 @@ Format: ID, date, context, options considered, decision, consequences. Required 
 
 ## ADR-009 (2026-11-08): Error handling and middleware
 - Decision: one `AppError` hierarchy rendered by central handlers into a single JSON contract; validation errors omit submitted values; pure ASGI middlewares for request IDs and body-size limits (no BaseHTTPMiddleware, so SSE streaming stays safe). The body-size middleware answers 413 itself and signals disconnect to the app, because FastAPI converts exceptions raised from `receive()` into 400.
+
+## ADR-010 (2026-11-08): One-time tokens, email delivery, MFA, key rotation
+- One-time tokens (password reset 1 h, email verification 24 h): 384-bit random, only SHA-256 stored in `one_time_tokens`, consumed with a single atomic `UPDATE ... WHERE used_at IS NULL AND expires_at > now RETURNING` (concurrent use of one token succeeds exactly once). A new request invalidates older unused tokens of the same purpose. A weak new password rolls back the consume so the token stays usable.
+- `forgot` always returns 202 and does the lookup + email in a background task; rate limits (per IP and per submitted email, existing or not) are applied in-request so the response never depends on the account.
+- Password reset signs out every session; password change signs out every other session. Both send a best-effort notification email.
+- Email goes through an `EmailSender` protocol: `file` backend (writes .eml; dev/test only, prod config forbids it) and `smtp` (stdlib smtplib in a thread, STARTTLS/SSL). The SMTP adapter is tested against a real aiosmtpd server.
+- MFA: RFC 6238 TOTP via pyotp (30 s step, +/-1 step window), secret stored Fernet-encrypted (`MFA_ENCRYPTION_KEY`), replay protection by atomically advancing `last_used_step`, 10 single-use recovery codes stored as SHA-256, attempts rate limited per user (5 / 5 min). Login returns `mfa_required` + a 5-minute `mfa` JWT (different `type`, no `sid`) that only `/auth/mfa/verify` accepts.
+- JWT key rotation: tokens carry `kid`; `JWT_KEY_ID`/`JWT_SECRET` sign, `JWT_RETIRED_KEYS` (JSON kid->secret) only verify. Unknown kid is rejected; a token without kid verifies only against the active key. Procedure: set new active key, move the old one to retired, remove it after `ACCESS_TOKEN_TTL_S`.
+
+## ADR-011 (2026-11-08): S3 adapter
+- boto3 (sync, matching the sync `ObjectStorage` protocol), `upload_fileobj` for streaming/multipart with a counting+hashing reader (enforces `max_bytes`, aborts multipart on failure), `open()` returns a seekable spooled temp copy (PDF parsers need seek), `delete_prefix` paginates + batch deletes, optional key prefix to share a bucket between environments. Selected with `STORAGE_BACKEND=s3`. HEAD cannot distinguish a missing bucket from a missing key, so `exists()` returns False there; reads/writes/deletes and the readiness probe fail loudly.

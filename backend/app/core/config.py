@@ -54,7 +54,15 @@ class Settings(BaseSettings):
     qdrant_collection_prefix: str = ""
 
     # Object storage (local volume adapter; S3-compatible adapter arrives with deployment work)
-    storage_backend: Literal["local"] = "local"
+    storage_backend: Literal["local", "s3"] = "local"
+    s3_endpoint_url: str = ""  # empty = AWS; set for MinIO/R2/B2 etc.
+    s3_bucket: str = ""
+    s3_region: str = "us-east-1"
+    s3_access_key: SecretStr = SecretStr("")
+    s3_secret_key: SecretStr = SecretStr("")
+    s3_path_style: bool = True
+    s3_key_prefix: str = ""
+    s3_timeout_s: int = Field(default=10, ge=1)
     storage_local_root: Path = REPO_ROOT / "data" / "objects"
 
     # Auth
@@ -137,6 +145,8 @@ class Settings(BaseSettings):
             Fernet(self.mfa_encryption_key.get_secret_value().encode())
         except (ValueError, TypeError) as exc:
             raise ValueError("mfa_encryption_key must be a valid Fernet key") from exc
+        if self.storage_backend == "s3" and not self.s3_bucket:
+            raise ValueError("storage_backend=s3 requires s3_bucket")
         if self.smtp_use_ssl and self.smtp_starttls:
             raise ValueError("smtp_use_ssl and smtp_starttls are mutually exclusive")
         if self.app_env == "prod":

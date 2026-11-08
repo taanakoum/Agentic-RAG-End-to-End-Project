@@ -82,3 +82,20 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Limitations (not hidden): `.env.example` still cannot be created (KI-006); S3 adapter deferred (KI-007); auth features missing per KI-011/KI-012. Ownership is proven on login sessions only; per-resource ownership tests come with documents/conversations.
 - Usage: could not be measured.
 - Next step: Phase 3 (Ingestion).
+
+---
+## Entry 6: Auth hardening (KI-011 partly), S3 adapter (KI-007), .env.example (KI-006); Docker blocked (KI-014)
+- Date: 2026-11-08. Branch feature/phase-3-hardening-and-ingestion. Commit dd057a8 (auth) + following commit (S3).
+- Docker: the user asked to install Docker. `winget install -e --id Docker.DockerDesktop` (session not elevated: `Elevated: False`) downloaded the installer, said "The installer will request to run as administrator", then FAILED twice with exit code 1 (UAC not approved / not possible non-interactively). Docker is NOT installed, WSL is NOT installed. G1 is therefore still NOT verified. See KI-014 for the exact steps and `scripts/verify_g1.ps1`.
+- Built: JWT `kid` rotation; password change; forgot/reset password; email verification; TOTP MFA (setup/confirm/verify/disable/status, recovery codes, encrypted seed, replay protection); email senders (file + SMTP); `SecretBox` (Fernet); migration 0003; S3 adapter + settings + factory; shared storage contract tests; `.env.example` rename.
+- Dependencies added and pinned: pyotp 2.10.0, cryptography 50.0.2, boto3 1.43.126, pypdf 7.0.0, pypdfium2 5.15.1, rapidocr 3.10.0, onnxruntime 1.31.1, pillow 13.0.0, python-multipart 0.0.33 (the last six are for Phase 3, installed now but not yet used); dev: aiosmtpd 1.4.6, types-boto3[s3] 1.43.126, moto[s3,server] 5.2.5.
+- Commands and ACTUAL results (last run after all code changes in this entry):
+  - `uv run --no-sync ruff check .` -> All checks passed; `ruff format` clean.
+  - `uv run --no-sync pyright` (strict) -> 0 errors.
+  - `uv run --no-sync pytest -q` -> 271 passed, 1 warning (qdrant-client). New: 104 unit (incl. config/rotation/email/crypto), account API 19, MFA API 14, storage contract 43 (local + S3 over HTTP), plus the earlier suites.
+  - Real SMTP: the SMTP adapter delivered a message to an in-process aiosmtpd SMTP server over a socket; an unreachable server produced `ExternalServiceUnavailableError` without leaking the message.
+  - Real S3 protocol over HTTP: contract tests against a moto server (an S3 EMULATOR): 11-12 MiB multipart uploads, size-limit abort leaves no object and no pending multipart uploads, prefix delete with 25 objects (pagination/batching) and string-prefix collision (`user1` vs `user10`), key-prefix tenant isolation, missing bucket and unreachable endpoint -> `StorageError`, `/health/ready` reports S3 storage ok / error. NOT run against MinIO or AWS.
+  - Mutation checks (each made tests FAIL, then restored and green): removed session revocation on password reset; removed `used_at IS NULL` from token consume; removed the TOTP replay guard (`last_used_step < step`). Failing tests: 6 across account/MFA suites; restored -> 33 passed.
+- Defects found/fixed: hard-coded migration head in a test (now read from the Alembic script directory); MinIO download+execute was blocked by the permission classifier (not circumvented; moto used instead and the gap recorded); S3 `exists()` cannot tell a missing bucket from a missing key (documented, test corrected); several typing/lint items (explained narrow ignores only for pyotp/PyJWT/redis/boto3 untyped parts).
+- Not done: account deletion, breached-password check, verification gating, MinIO/AWS verification, Docker/G1.
+- Usage: could not be measured.

@@ -28,3 +28,9 @@ A session is "live" while its family has a token that is unrevoked and unexpired
 
 ## Planned (later phases)
 documents, document_versions, ingestion_jobs, outbox_events, conversations, messages, LangGraph checkpoint tables, memories, preferences, feedback, evaluation_results, audit_events.
+
+## Added in migration 0003
+- `users.email_verified_at timestamptz null`.
+- `one_time_tokens(id, user_id FK cascade, purpose, token_hash UNIQUE, expires_at, used_at, created_at)`, index (user_id, purpose). Purposes: `password_reset`, `email_verify`.
+- `user_mfa(user_id PK/FK cascade, secret_encrypted, confirmed_at, last_used_step bigint, created_at)`.
+- `mfa_recovery_codes(id, user_id FK cascade, code_hash UNIQUE, used_at, created_at)`.

@@ -28,5 +28,21 @@ Validation errors never include submitted values. Codes used so far: VALIDATION_
 
 Unknown JSON fields are rejected (422). Bodies over 1 MiB (configurable) get 413.
 
+## Account security (all under /auth)
+| Method | Path | Body | Success | Errors |
+|---|---|---|---|---|
+| POST | /password/change | `{current_password, new_password}` (Bearer) | 204; other sessions revoked | 401, 422, 429 |
+| POST | /password/forgot | `{email}` | 202 always (same body for unknown emails) | 422, 429 |
+| POST | /password/reset | `{token, new_password}` | 204; all sessions revoked | 400 `INVALID_RESET_TOKEN`, 422, 429 |
+| POST | /email/verify/request | Bearer | 202 | 401, 429 |
+| POST | /email/verify | `{token}` | 204 | 400 `INVALID_VERIFICATION_TOKEN`, 422, 429 |
+| GET | /mfa/status | Bearer | `{enabled, recovery_codes_remaining}` | 401 |
+| POST | /mfa/setup | Bearer | `{secret, otpauth_uri}` | 401, 409 `MFA_ALREADY_ENABLED` |
+| POST | /mfa/confirm | `{code}` (Bearer) | `{recovery_codes: [...]}` (shown once) | 400 `MFA_NOT_PENDING`, 401 `INVALID_MFA_CODE`, 429 |
+| POST | /mfa/verify | `{mfa_token, code}` (TOTP or recovery code) | login response with tokens | 401 `INVALID_MFA_TOKEN`/`INVALID_MFA_CODE`, 429 |
+| POST | /mfa/disable | `{password, code}` (Bearer) | 204 | 401, 422, 429 |
+
+`POST /auth/login` now returns `{mfa_required, access_token, refresh_token, token_type, expires_in, mfa_token}`; when `mfa_required` is true only `mfa_token` is set. `UserPublic` gained `email_verified`.
+
 ## Not yet implemented
 Users, documents, ingestion, sessions/chat, memory, feedback, evaluation endpoints (see docs/spec/06-api-errors-frontend.md).

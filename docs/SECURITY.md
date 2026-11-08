@@ -36,5 +36,12 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 - Identity is derived only from the validated token. `require_owner` returns 404 (not 403) for another user's or a missing resource; tested on login sessions (list/revoke) including the attacker case and a mutation check (removing the ownership check makes the test fail).
 - Not yet covered (arrives with the resources): documents, vectors, conversations, checkpoints, memories, jobs.
 
+## Account security (added after Phase 2)
+- Password change (needs the current password; wrong-password attempts rate limited 5/15 min; other sessions revoked) and password reset by emailed single-use token (1 h; all sessions revoked; token survives a rejected weak password; concurrent use succeeds once). `forgot` never reveals whether an account exists.
+- Email verification by single-use token (24 h). `email_verified` is exposed on the user; nothing is gated on it yet.
+- TOTP MFA with encrypted seed, replay protection, recovery codes and a separate short-lived challenge token. See ADR-010.
+- JWT signing key rotation with `kid` (ADR-010). Key storage is environment variables only (no KMS/vault).
+- Limits: the email file backend writes tokens to disk (dev/test only); SMTP credentials live in env; recovery codes carry ~50 bits and rely on the 5-attempt rate limit; TOTP seeds are only as safe as `MFA_ENCRYPTION_KEY` (rotating it invalidates enrolled seeds; no re-encryption tool yet).
+
 ## Not implemented yet
-Password change/reset, email verification, account deletion, MFA, secret rotation, audit log table, malware scanning of uploads, prompt-injection defenses (Phases 3-6).
+Account deletion, breached-password check, audit log table, malware scanning of uploads, prompt-injection defenses (Phases 3-6).
