@@ -19,7 +19,7 @@ from app.ingestion.textnorm import meaningful_chars, normalize_text
 
 _CONVERTERS: dict[tuple[bool, bool], Any] = {}  # warm-process caches (see serve())
 _CHUNKERS: dict[tuple[str, int], Any] = {}
-_OCR: dict[str, Any] = {}
+OCR_CACHE: dict[str, Any] = {}
 
 
 def _fail(code: str, message: str) -> dict[str, Any]:
@@ -32,7 +32,59 @@ def _open_reader(path: str) -> Any:
     return PdfReader(path, strict=False)
 
 
+def _non_pdf(command: str, path: str, opts: dict[str, Any]) -> dict[str, Any]:
+    """Inspect / parse TXT, Markdown, CSV, DOCX. Rejects return {"ok": False, code, message}."""
+    from app.ingestion import formats
+
+    fmt = str(opts["format"])
+    try:
+        if fmt == "docx":
+            formats.check_docx_zip(
+                path,
+                max_entries=int(opts["docx_max_entries"]),
+                max_uncompressed=int(opts["docx_max_uncompressed"]),
+                max_ratio=int(opts["docx_max_ratio"]),
+            )
+            blocks = formats.parse_docx(path, max_rows=int(opts["max_table_rows"]))
+        else:
+            text = formats.read_text(path, max_bytes=int(opts["max_text_bytes"]))
+            if fmt == "txt":
+                if command == "inspect":
+                    return {"ok": True, "encrypted": False, "page_count": 1}
+                return {
+                    "ok": True,
+                    "page_count": 1,
+                    "ocr_status": "not_needed",
+                    "ocr_pages": 0,
+                    "pages": [{"page_number": 1, "text": text, "from_ocr": False}],
+                }
+            if fmt == "md":
+                blocks = formats.parse_markdown(text)
+            elif fmt == "csv":
+                blocks = formats.parse_csv(
+                    text, max_rows=int(opts["max_table_rows"]), max_cols=int(opts["max_csv_cols"])
+                )
+            else:
+                return _fail("DOCUMENT_UNSUPPORTED_TYPE", f"Unsupported format: {fmt}")
+    except formats.FormatError as exc:
+        return _fail(exc.code, exc.message)
+    except Exception as exc:
+        # python-docx / lxml / zipfile raise many unrelated exception types on hostile input.
+        return _fail("DOCUMENT_CORRUPTED", f"{type(exc).__name__}: {exc}"[:300])
+    if command == "inspect":
+        return {"ok": True, "encrypted": False, "page_count": 1}
+    return {
+        "ok": True,
+        "page_count": 1,
+        "ocr_status": "not_needed",
+        "ocr_pages": 0,
+        "blocks": blocks,
+    }
+
+
 def cmd_inspect(path: str, opts: dict[str, Any]) -> dict[str, Any]:
+    if opts.get("format", "pdf") != "pdf":
+        return _non_pdf("inspect", path, opts)
     try:
         reader = _open_reader(path)
         if reader.is_encrypted:
@@ -69,7 +121,7 @@ def cmd_light(path: str, opts: dict[str, Any]) -> dict[str, Any]:
     elif needs:
         from app.ingestion.ocr import RapidOcrEngine
 
-        engine = _OCR.setdefault("rapid", RapidOcrEngine())
+        engine = OCR_CACHE.setdefault("rapid", RapidOcrEngine())
         data = open(path, "rb").read()  # noqa: SIM115
         limit = int(opts["ocr_max_pages"])
         failures = 0
@@ -203,7 +255,16 @@ def cmd_docling(path: str, opts: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-COMMANDS = {"inspect": cmd_inspect, "light": cmd_light, "docling": cmd_docling}
+def cmd_structured(path: str, opts: dict[str, Any]) -> dict[str, Any]:
+    return _non_pdf("parse", path, opts)
+
+
+COMMANDS = {
+    "inspect": cmd_inspect,
+    "light": cmd_light,
+    "docling": cmd_docling,
+    "structured": cmd_structured,
+}
 
 
 def serve() -> None:

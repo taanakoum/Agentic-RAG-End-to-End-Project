@@ -144,9 +144,12 @@ def _posix_preexec(limits: SandboxLimits) -> Any:
         import resource
 
         os.setsid()
-        if limits.memory_mb and limits.address_space:
+        if limits.memory_mb:
             cap = limits.memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+            # RLIMIT_DATA counts writable heap + anonymous mappings (close to real memory use).
+            # RLIMIT_AS also counts reserved address space, which breaks PyTorch/ONNX runtimes.
+            kind = resource.RLIMIT_AS if limits.address_space else resource.RLIMIT_DATA
+            resource.setrlimit(kind, (cap, cap))
         cpu = int(limits.timeout_s) + 5
         resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -299,10 +302,8 @@ class PersistentSandbox:
         if sys.platform == "win32":
             self._job = _make_job(self._limits.memory_mb)
             kwargs["creationflags"] = 0x00000200
-        elif self._limits.memory_mb and self._limits.address_space:  # pragma: no cover
+        else:  # pragma: no cover  (exercised by sandbox_selfcheck inside the Linux container)
             kwargs["preexec_fn"] = _posix_session_with_memory(self._limits)
-        else:  # pragma: no cover
-            kwargs["start_new_session"] = True
         self._stderr = tempfile.TemporaryFile()  # noqa: SIM115  (closed in _kill)
         self._process = cast(
             "subprocess.Popen[bytes]",
@@ -433,7 +434,8 @@ def _posix_session_with_memory(limits: SandboxLimits) -> Any:  # pragma: no cove
         os.setsid()
         if limits.memory_mb:
             cap = limits.memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+            kind = resource.RLIMIT_AS if limits.address_space else resource.RLIMIT_DATA
+            resource.setrlimit(kind, (cap, cap))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
     return apply

@@ -55,6 +55,7 @@ def test_prod_ok_with_strong_secret() -> None:
         argon2_time_cost=3,
         email_backend="smtp",
         smtp_host="smtp.example.com",
+        require_verified_email=True,
     )
     assert s.app_env == "prod"
 
@@ -105,6 +106,7 @@ def test_prod_requires_smtp_email_backend() -> None:
             log_json=True,
             argon2_memory_kib=65536,
             argon2_time_cost=3,
+            require_verified_email=True,
         )
 
 

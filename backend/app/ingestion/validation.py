@@ -19,10 +19,47 @@ from app.core.exceptions import (
 )
 from app.ingestion.parsing import ParseError, PdfParser, SandboxedPdfParser
 
-_ALLOWED_MIME = frozenset(
-    {"application/pdf", "application/x-pdf", "application/acrobat", "application/octet-stream", ""}
-)
+_OCTET = ("application/octet-stream", "")
+#: extension -> (format, allowed declared MIME types, mime type stored on the document)
+FORMATS: dict[str, tuple[str, frozenset[str], str]] = {
+    ".pdf": (
+        "pdf",
+        frozenset({"application/pdf", "application/x-pdf", "application/acrobat", *_OCTET}),
+        "application/pdf",
+    ),
+    ".docx": (
+        "docx",
+        frozenset(
+            {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/zip",
+                *_OCTET,
+            }
+        ),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ),
+    ".txt": ("txt", frozenset({"text/plain", *_OCTET}), "text/plain"),
+    ".md": (
+        "md",
+        frozenset({"text/markdown", "text/x-markdown", "text/plain", *_OCTET}),
+        "text/markdown",
+    ),
+    ".markdown": (
+        "md",
+        frozenset({"text/markdown", "text/x-markdown", "text/plain", *_OCTET}),
+        "text/markdown",
+    ),
+    ".csv": (
+        "csv",
+        frozenset(
+            {"text/csv", "application/csv", "application/vnd.ms-excel", "text/plain", *_OCTET}
+        ),
+        "text/csv",
+    ),
+}
+SUPPORTED_EXTENSIONS = "PDF, DOCX, TXT, MD, CSV"
 _MAGIC = b"%PDF-"
+_ZIP_MAGIC = b"PK\x03\x04"
 _MAGIC_WINDOW = 1024  # the PDF spec tolerates junk before the header within the first 1 KiB
 _CHUNK = 1024 * 1024
 
@@ -32,6 +69,8 @@ class ValidatedPdf:
     size: int
     sha256: str
     page_count: int
+    source_format: str = "pdf"
+    mime_type: str = "application/pdf"
 
 
 def safe_filename(raw: str | None) -> str:
@@ -49,66 +88,95 @@ def validate_pdf(
     settings: Settings,
     parser: PdfParser | None = None,
 ) -> ValidatedPdf:
-    """Run every upload check in order; raises a specific AppError for each failure."""
+    """Run every upload check in order; raises a specific AppError for each failure.
+
+    Despite the historical name this validates every supported format (PDF, DOCX, TXT, MD, CSV).
+    """
     # 1-2. presence and extension (the extension alone never makes a file valid)
     name = safe_filename(filename)
     if not name:
         raise DocumentValidationError("The upload has no file name.", code="DOCUMENT_MISSING")
-    if not name.lower().endswith(".pdf"):
+    extension = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if extension not in FORMATS:
         raise UnsupportedMediaTypeError(
-            "Only PDF files are supported (the file name must end in .pdf).",
+            f"Unsupported file type. Supported: {SUPPORTED_EXTENSIONS}.",
             code="DOCUMENT_UNSUPPORTED_TYPE",
         )
+    source_format, allowed_mime, stored_mime = FORMATS[extension]
     # 3. declared MIME type
     declared = (content_type or "").split(";", 1)[0].strip().lower()
-    if declared not in _ALLOWED_MIME:
+    if declared not in allowed_mime:
         raise UnsupportedMediaTypeError(
-            "The declared content type is not PDF.", code="DOCUMENT_UNSUPPORTED_TYPE"
+            f"The declared content type does not match a {source_format.upper()} file.",
+            code="DOCUMENT_UNSUPPORTED_TYPE",
         )
-    # 7. size
+    # 7. size (per format family)
+    limit = settings.max_pdf_bytes if source_format in {"pdf", "docx"} else settings.max_text_bytes
     file.seek(0, os.SEEK_END)
     size = file.tell()
     file.seek(0)
     if size == 0:
         raise DocumentValidationError("The uploaded file is empty.", code="DOCUMENT_EMPTY")
-    if size > settings.max_pdf_bytes:
+    if size > limit:
         raise PayloadTooLargeError(
-            f"The PDF is larger than the {settings.max_pdf_bytes // (1024 * 1024)} MiB limit.",
+            f"The file is larger than the {limit // (1024 * 1024)} MiB limit for this type.",
             code="DOCUMENT_TOO_LARGE",
         )
-    # 4. magic bytes
-    if _MAGIC not in file.read(_MAGIC_WINDOW):
+    # 4. magic bytes (binary formats; text formats are checked by decoding in the sandbox)
+    head = file.read(_MAGIC_WINDOW)
+    if source_format == "pdf" and _MAGIC not in head:
         raise DocumentValidationError(
             "The file content is not a PDF (missing %PDF- header).", code="DOCUMENT_INVALID_FORMAT"
         )
+    if source_format == "docx" and not head.startswith(_ZIP_MAGIC):
+        raise DocumentValidationError(
+            "The file content is not a Word document.", code="DOCUMENT_INVALID_FORMAT"
+        )
     file.seek(0)
-    # content hash (dedup key) computed over the original bytes
     digest = hashlib.sha256()
     while chunk := file.read(_CHUNK):
         digest.update(chunk)
     file.seek(0)
-    # 5-6, 8-9. parser validity, readability, page count, encryption
-    page_count = _inspect_in_sandbox(file, settings, parser or SandboxedPdfParser(settings))
+    # 5-6, 8-9. parser validity, readability, page count, encryption, format-specific safety
+    page_count = _inspect_in_sandbox(
+        file, settings, parser or SandboxedPdfParser(settings), source_format
+    )
     file.seek(0)
-    return ValidatedPdf(size=size, sha256=digest.hexdigest(), page_count=page_count)
+    return ValidatedPdf(
+        size=size,
+        sha256=digest.hexdigest(),
+        page_count=page_count,
+        source_format=source_format,
+        mime_type=stored_mime,
+    )
 
 
-def _inspect_in_sandbox(file: BinaryIO, settings: Settings, parser: PdfParser) -> int:
+def _inspect_in_sandbox(
+    file: BinaryIO, settings: Settings, parser: PdfParser, source_format: str
+) -> int:
     """Open the file with the real parser in a resource-limited child process."""
     with tempfile.TemporaryDirectory(prefix="upload-") as directory:
-        path = Path(directory) / "upload.pdf"
+        path = Path(directory) / f"upload.{source_format}"
         with path.open("wb") as out:
             while chunk := file.read(_CHUNK):
                 out.write(chunk)
         try:
-            inspected = parser.inspect(path)
+            inspected = parser.inspect(path, source_format)
         except ParseError as exc:
             if exc.code == "DOCUMENT_PARSE_TIMEOUT":
                 raise DocumentValidationError(
                     "The PDF took too long to inspect and was rejected.", code=exc.code
                 ) from exc
+            if exc.code.startswith("DOCUMENT_") and exc.code not in {
+                "DOCUMENT_PARSE_FAILED",
+                "DOCUMENT_PARSE_MEMORY",
+                "DOCUMENT_CORRUPTED",
+            }:
+                raise DocumentValidationError(
+                    exc.message, code=exc.code
+                ) from exc  # format-specific
             raise DocumentValidationError(
-                "The PDF is corrupted or malformed and cannot be read.", code="DOCUMENT_CORRUPTED"
+                "The file is corrupted or malformed and cannot be read.", code="DOCUMENT_CORRUPTED"
             ) from exc
     if inspected.encrypted:
         raise DocumentEncryptedError()

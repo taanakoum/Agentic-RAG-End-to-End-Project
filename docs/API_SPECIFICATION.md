@@ -59,3 +59,9 @@ Other users' documents and jobs return 404, identical to a non-existent id. Docu
 
 ## Not yet implemented
 Users, sessions/chat, memory, feedback, evaluation endpoints (see docs/spec/06-api-errors-frontend.md).
+
+## Updates 2026-11-08
+- `POST /documents/upload` accepts PDF, DOCX, TXT, MD and CSV (type verified from content). Rejections use the document error codes (`DOCUMENT_UNSUPPORTED_TYPE`, `DOCUMENT_INVALID_FORMAT`, `DOCUMENT_TOO_LARGE`, `DOCUMENT_EMPTY`, `DOCUMENT_CORRUPTED`, `DOCUMENT_ENCRYPTED`). Document responses include `source_format` and `parser`.
+- `DELETE /auth/account` body `{password, code?}` (Bearer; `code` required when MFA is on) -> 202 `{status:"deleting"}`; errors 401, 422 (`incorrect_password`), 429, 503. All sessions end immediately.
+- Document and ingestion routes return 403 `EMAIL_NOT_VERIFIED` when `REQUIRE_VERIFIED_EMAIL=true` and the email is unverified.
+- Registration and password change/reset reject breached passwords (422 validation detail `password_breached`).

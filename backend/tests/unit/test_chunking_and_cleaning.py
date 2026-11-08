@@ -240,6 +240,12 @@ def test_list_items_are_not_merged() -> None:
 # ============================================================ light parser OCR rules (child code)
 
 
+@pytest.fixture(autouse=True)
+def _fresh_ocr_cache() -> None:
+    """The child process caches its OCR engine (warm mode); tests must not share it."""
+    sandbox_jobs.OCR_CACHE.clear()
+
+
 class FakeEngine:
     instances: ClassVar[list[FakeEngine]] = []
 

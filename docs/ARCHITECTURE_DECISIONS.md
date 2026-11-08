@@ -73,3 +73,37 @@ Format: ID, date, context, options considered, decision, consequences. Required 
 - Reconciler (Beat, every `RECONCILE_INTERVAL_S`): republish queued jobs whose message vanished (at most once per TTL), recover jobs stuck in processing (worker died) or fail them after max attempts, republish unfinished purges, prune sent outbox rows older than 7 days.
 - Deletion: `DELETE` tombstones the row (`deleted_at`, instantly invisible to the API) and writes a purge outbox event in the same transaction; the purge task removes Qdrant points (user_id + document_id filter), the storage prefix, then hard-deletes the row LAST, so any failure is retried by the task and, if lost, by the reconciler. A purge waits while a job for the document is processing; a worker that finishes after a delete removes the vectors it wrote.
 - State table deviation: PENDING and VALIDATING exist in the state machine, but because validation is synchronous in the API a new document is inserted directly as QUEUED.
+
+## ADR-015 (2026-11-08): Docling is the default PDF pipeline; OCR only when a page needs it (supersedes ADR-013's "Docling not adopted")
+- Pipelines (`PDF_PIPELINE`): `docling` (default), `light` (pypdf + RapidOCR, cheap fallback), `structured` (TXT/MD/CSV/DOCX).
+- Docling converts with layout and table understanding; OCR is switched on only if at least one page has no usable text layer. Text PDFs and all non-PDF formats never touch OCR.
+- Chunking uses Docling's `HybridChunker` (320 tokens, heading context prepended for embedding). Pages Docling recognised but did not chunk (e.g. a scanned page it labelled a heading) fall back to the light chunker, so no page is silently dropped.
+- Evidence: `evaluation/reports/chunking_eval.md` (6 strategies, 36 questions, real embedding models). Docling HybridChunker: hybrid hit@3 0.81, MRR 0.70, versus fixed 1000-char chunks 0.56 / 0.55. Docling markdown + LangChain header splitter scored slightly higher on this corpus (hit@3 0.86, MRR 0.72) but depends on a markdown export; the HybridChunker was kept because it is token-aware, keeps tables intact and keeps page numbers per chunk, which citations need. The corpus is synthetic and small (KI-018).
+- LangChain splitters were evaluated, not adopted as a pipeline dependency. Cost: about 1.7 s/page CPU for conversion (KI-021).
+
+## ADR-016 (2026-11-08): Sandboxed parsing with warm process pools
+- Untrusted files are parsed only in child processes: wall-clock timeout, memory cap (Windows Job Object; POSIX `RLIMIT_DATA`), no process spawning (Windows), scrubbed environment (no secrets), JSON-lines protocol.
+- The child runs the base interpreter with the venv's site-packages on `PYTHONPATH` (the venv launcher is itself a process and is blocked by the job's active-process limit).
+- `PersistentSandbox` keeps a warm child (models loaded once), recycles it after `max_jobs`, and kills it on timeout or crash; `SandboxPool` serves concurrent callers. Inspection (cheap) and parsing (heavy) use separate pools; one-shot mode exists for tests.
+- Trade-off: a warm child is reused across documents of different users, so it is recycled periodically and keeps no per-user state; one child per document would be stricter but slower.
+
+## ADR-017 (2026-11-08): Chunking method
+- Sentence- and section-aware packing with a token budget; headings detected per line and tracked as a section path; chunks may span page breaks and record `page_number`..`page_end`; headers/footers removed, hyphenation repaired, hard-wrapped lines unwrapped before chunking.
+- Embedding text = `title > section path` + body (contextual header); the stored and cited text is the unmodified body.
+- CSV is chunked as row groups that repeat the header row; Markdown by heading; DOCX by heading styles and tables.
+
+## ADR-018 (2026-11-08): Multiple formats, validated by content
+- `FORMATS` maps extension to (format, allowed MIME types, stored MIME); the declared extension/MIME is only a hint. PDF: magic bytes + parser. DOCX: zip structure, entry count/size/ratio limits, XML parsed without entities. TXT/MD/CSV: size limit, binary rejection, encoding detection, row/column caps. Same state machine, outbox and indexing as PDFs; `documents.source_format` and `documents.parser` are recorded (migrations 0005, 0007).
+
+## ADR-019 (2026-11-08): Account deletion, breached passwords, verified-email gating
+- Deletion: `DELETE /auth/account` with password (and MFA code when enabled). One transaction revokes sessions, deactivates and tombstones the user, tombstones every document with purge events and queues a `purge_user` event. The worker purges vectors, files and finally the user row (email freed). Idempotent; the reconciler requeues unfinished purges.
+- Breached passwords: offline check against about 135k SecLists passwords (MIT) plus a "core" reduction (trailing digits/symbols, leet). No external service. Limit: not a full breach corpus.
+- Verified-email gating: `REQUIRE_VERIFIED_EMAIL` guards document and ingestion routes with the `VerifiedUser` dependency (403 `EMAIL_NOT_VERIFIED`); auth/account routes stay available so users can verify. Production config validation requires it to be true.
+
+## ADR-020 (2026-11-08): Orphan sweep
+- Beat task `sweep-orphans` lists storage (`iter_objects`, with modification times), deletes objects in the generated key layout that have no document row and are older than `ORPHAN_GRACE_S`, and clears stale temporary uploads. The grace period prevents racing an upload that has written the object but not yet committed its row.
+
+## ADR-021 (2026-11-08): Concurrency model
+- Blocking work never runs on the event loop: Argon2 in threads behind a semaphore; hashing/validation on a dedicated executor; parsing in sandbox processes; a larger default thread pool; single-query hot paths (windowed list query, `get_owned_with_job`); notification emails as background tasks; uvicorn `--workers` for multiple cores.
+- Guardrail test measures event-loop lag during a mixed burst of 12 users with production-strength Argon2 and fails if blocking calls appear (confirmed to fail against a mutant that hashes on the loop).
+- Benchmark (`load_testing/concurrency_bench.py`, dev laptop, local services, one client process): throughput rose from 87 to 259 req/s with 3 API processes, and upload p50 fell from 1813 ms to 227 ms after the optimisations. Dev-machine numbers only (KI-022), not capacity claims.

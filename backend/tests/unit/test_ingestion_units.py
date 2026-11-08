@@ -84,7 +84,7 @@ def test_renamed_non_pdf_is_rejected_by_content_not_name() -> None:
     assert e.value.status_code == 400
 
 
-@pytest.mark.parametrize("name", ["doc.txt", "doc.pdf.exe", "doc", "doc.docx"])
+@pytest.mark.parametrize("name", ["doc.exe", "doc.pdf.exe", "doc", "doc.png", "doc.doc"])
 def test_wrong_extension_is_unsupported_even_with_pdf_content(name: str) -> None:
     with pytest.raises(UnsupportedMediaTypeError) as e:
         check(sample_text_pdf(), name=name)

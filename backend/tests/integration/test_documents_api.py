@@ -155,7 +155,7 @@ async def test_oversized_pdf_and_too_many_pages(
 
 
 async def test_request_body_over_the_upload_limit_is_413(client_with_settings: Any) -> None:
-    settings = get_settings().model_copy(update={"max_pdf_bytes": 4096})
+    settings = get_settings().model_copy(update={"max_pdf_bytes": 4096, "max_text_bytes": 4096})
     c = await client_with_settings(settings)
     headers = await new_user(c)
     # the app-level limit is max_pdf_bytes + 1 MiB of multipart overhead

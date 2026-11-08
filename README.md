@@ -35,4 +35,7 @@ uv run --no-sync pytest                             # everything
 Tests never touch the dev database: `backend/tests/conftest.py` forces `rag_test`, Redis db 15 and a `test_` Qdrant prefix.
 
 ## Docker (UNVERIFIED)
-`docker-compose.yml` and `backend/Dockerfile` are written but have never been built or run (Docker is not installed on the dev machine).
+`docker-compose.yml` and `backend/Dockerfile` are written but have never been built or run: Docker Desktop is installed but needs WSL2 (admin + reboot; KI-014). See docs/DEPLOYMENT.md for the exact steps and `scripts/verify_g1.ps1`.
+
+## Documents
+Supported uploads: PDF, DOCX, TXT, MD, CSV. PDFs are parsed with Docling (OCR only for pages without a text layer), everything is parsed in a sandboxed child process, chunked, embedded (FastEmbed dense + BM25 sparse) and indexed in Qdrant. Licences and cost: docs/LICENSES.md.

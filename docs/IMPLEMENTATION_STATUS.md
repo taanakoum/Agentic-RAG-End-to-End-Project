@@ -4,7 +4,7 @@ States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
 **Current phase:** 4 (Retrieval). Phases 2 and 3 VERIFIED (native). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
-**Next step:** (a) User runs the Docker steps in KI-014, then `powershell -File scripts/verify_g1.ps1` to verify G1. (b) Phase 4: read docs/spec/04-retrieval.md; build dense+sparse query, RRF, cross-encoder rerank, authz filters, evaluation dataset and metrics (note KI-018). Start services first (`scripts/dev_services.ps1 start`).
+**Next step:** (a) User installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1` to verify G1. (b) Phase 4: read docs/spec/04-retrieval.md; build dense+sparse query, RRF, cross-encoder rerank, authz filters, evaluation dataset and metrics (note KI-018). Start services first (`scripts/dev_services.ps1 start`).
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -38,6 +38,9 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | Persistent object storage | VERIFIED (local volume + S3 protocol via emulator) | Log entries 6, 7 |
 | Celery ingestion | VERIFIED | Log entry 7 |
 | Outbox, idempotency, retries | VERIFIED | Log entry 7 |
+| Multiple formats (PDF, DOCX, TXT, MD, CSV) + sandboxed parsing + Docling | TESTED (Windows) | Log entry 8 |
+| Account deletion, breached-password check, verified-email gating | TESTED | Log entry 8 |
+| Orphan sweep | TESTED | Log entry 8 |
 | Qdrant indexing/retrieval | PARTIAL (indexing verified; retrieval is Phase 4) | Log entry 7 |
 | Hybrid dense+sparse+RRF | NOT_STARTED | |
 | Cross-encoder rerank | NOT_STARTED | |

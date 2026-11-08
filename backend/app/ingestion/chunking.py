@@ -158,6 +158,16 @@ def _units(pages: list[PageText], max_tokens: int) -> list[tuple[_Unit, int]]:
     return out
 
 
+@dataclass(frozen=True, slots=True)
+class Block:
+    """An explicit structural element (Markdown, DOCX, CSV): no heading guessing needed."""
+
+    kind: str  # "heading" | "paragraph" | "item" | "row"
+    text: str
+    level: int = 1  # heading level (1 = top)
+    page: int = 1
+
+
 def chunk_pages(
     pages: list[PageText],
     *,
@@ -167,11 +177,70 @@ def chunk_pages(
     overlap_tokens: int = 40,
     min_chars: int = 30,
 ) -> list[Chunk]:
-    """Pack sentences into section-aware chunks. See the module docstring for the rules."""
+    """Chunk page text (PDF): headings are detected from the text itself."""
+    return _pack(
+        _units(pages, max_tokens),
+        target_tokens=target_tokens,
+        max_tokens=max_tokens,
+        min_tokens=min_tokens,
+        overlap_tokens=overlap_tokens,
+        min_chars=min_chars,
+    )
+
+
+def chunk_blocks(
+    blocks: list[Block],
+    *,
+    target_tokens: int = 256,
+    max_tokens: int = 384,
+    min_tokens: int = 48,
+    overlap_tokens: int = 40,
+    min_chars: int = 30,
+) -> list[Chunk]:
+    """Chunk explicitly structured content (headings with levels, paragraphs, list items, rows)."""
+    items: list[tuple[_Unit, int]] = []
+    for block in blocks:
+        text = block.text.strip()
+        if not text:
+            continue
+        if block.kind == "heading":
+            items.append((_Unit(text, block.page, "heading"), max(1, block.level)))
+        elif block.kind == "paragraph":
+            for sentence in split_sentences(text):
+                items.extend(
+                    (_Unit(piece, block.page, "sentence"), 0)
+                    for piece in _split_oversized(sentence, max_tokens)
+                )
+        else:  # list items and table rows stay whole (split only if one alone is too long)
+            items.extend(
+                (_Unit(piece, block.page, "item"), 0)
+                for piece in _split_oversized(text, max_tokens)
+            )
+    return _pack(
+        items,
+        target_tokens=target_tokens,
+        max_tokens=max_tokens,
+        min_tokens=min_tokens,
+        overlap_tokens=overlap_tokens,
+        min_chars=min_chars,
+    )
+
+
+def _pack(
+    items: list[tuple[_Unit, int]],
+    *,
+    target_tokens: int,
+    max_tokens: int,
+    min_tokens: int,
+    overlap_tokens: int,
+    min_chars: int,
+) -> list[Chunk]:
+    """Pack units into section-aware chunks. See the module docstring for the rules."""
     chunks: list[Chunk] = []
     stack: list[tuple[int, str]] = []
     current: list[_Unit] = []
     tokens = 0
+    body_started = False  # False while the chunk holds only headings so far
     start_path = ""
     start_heading: str | None = None
 
@@ -179,7 +248,7 @@ def chunk_pages(
         return " > ".join(t for _, t in stack), (stack[-1][1] if stack else None)
 
     def flush(*, carry_overlap: bool) -> None:
-        nonlocal current, tokens, start_path, start_heading
+        nonlocal current, tokens, start_path, start_heading, body_started
         if not current:
             return
         text = _join(current)
@@ -209,9 +278,10 @@ def chunk_pages(
                 carried = carried[1:]
         current = carried
         tokens = sum(estimate_tokens(u.text) for u in carried)
+        body_started = bool(carried)
         start_path, start_heading = path_now()
 
-    for unit, level in _units(pages, max_tokens):
+    for unit, level in items:
         cost = estimate_tokens(unit.text)
         if unit.kind == "heading":
             if tokens >= min_tokens:
@@ -226,8 +296,11 @@ def chunk_pages(
             continue
         if current and tokens + cost > target_tokens and tokens >= min_tokens:
             flush(carry_overlap=True)
-        if not current:
+        if not body_started:
+            # label the chunk by the section its first line of BODY text belongs to, not by a
+            # heading that was immediately followed by a deeper heading
             start_path, start_heading = path_now()
+            body_started = True
         current.append(unit)
         tokens += cost
     flush(carry_overlap=False)

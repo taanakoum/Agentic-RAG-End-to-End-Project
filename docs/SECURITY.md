@@ -53,3 +53,13 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 
 ## Not implemented yet
 Account deletion, breached-password check, audit log table, malware scanning of uploads, prompt-injection defenses (Phases 3-6).
+
+## Added 2026-11-08 (parsing sandbox, formats, account lifecycle)
+- Parsing sandbox (ADR-016): timeouts, memory cap, no process spawning (Windows), scrubbed environment. Tested on Windows against decompression bombs, self-referencing page trees, XXE, entity bombs and zip bombs. Linux limits are implemented but unverified (KI-020). No malware scanning.
+- Uploads are validated by content for PDF, DOCX, TXT, MD, CSV (ADR-018); extension/MIME alone is never trusted. Object keys are generated, never derived from filenames.
+- Account deletion (`DELETE /auth/account`): password plus MFA code, immediate lock-out, asynchronous purge of vectors, files and rows (ADR-019).
+- Breached-password check: offline list; rejects known passwords and trivially decorated variants.
+- `REQUIRE_VERIFIED_EMAIL`: document and ingestion routes require a verified email; production config refuses to start without it.
+- Logging: the console renderer uses plain tracebacks (rich tracebacks print local variables, which can include secrets); regression test.
+- JWT key rotation (`kid`) exists, so the earlier "no key rotation" note above is out of date.
+- Still open: admin-forced MFA (KI-011), fixed-window rate limits (KI-012).

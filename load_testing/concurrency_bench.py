@@ -25,7 +25,7 @@ from pathlib import Path
 import httpx2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from tests.pdfs import sample_text_pdf  # noqa: E402
+from tests.pdfs import sample_text_pdf
 
 PASSWORD = "correct-horse-battery-staple"
 
@@ -61,13 +61,24 @@ async def timed(coro_factory, bucket: list[float], errors: list[str]):
 
 
 async def user_session(
-    base: str, index: int, run_id: str, seconds: float, lat: dict[str, list[float]], errors: list[str], ready: asyncio.Event, go: asyncio.Event
+    base: str,
+    index: int,
+    run_id: str,
+    seconds: float,
+    lat: dict[str, list[float]],
+    errors: list[str],
+    ready: asyncio.Event,
+    go: asyncio.Event,
 ) -> None:
     async with httpx2.AsyncClient(base_url=base, timeout=120) as client:
         email = f"bench-{run_id}-{index}@example.com"
         body = {"email": email, "password": PASSWORD}
-        await timed(lambda: client.post("/api/v1/auth/register", json=body), lat["register"], errors)
-        login = await timed(lambda: client.post("/api/v1/auth/login", json=body), lat["login"], errors)
+        await timed(
+            lambda: client.post("/api/v1/auth/register", json=body), lat["register"], errors
+        )
+        login = await timed(
+            lambda: client.post("/api/v1/auth/login", json=body), lat["login"], errors
+        )
         if login is None or login.status_code != 200:
             ready.set()
             return
@@ -78,13 +89,21 @@ async def user_session(
         n = 0
         while time.perf_counter() < end:
             n += 1
-            await timed(lambda: client.get("/api/v1/auth/me", headers=headers), lat["GET /auth/me"], errors)
-            await timed(lambda: client.get("/api/v1/documents", headers=headers), lat["GET /documents"], errors)
+            await timed(
+                lambda: client.get("/api/v1/auth/me", headers=headers), lat["GET /auth/me"], errors
+            )
+            await timed(
+                lambda: client.get("/api/v1/documents", headers=headers),
+                lat["GET /documents"],
+                errors,
+            )
             if n % 5 == 0:
                 pdf = sample_text_pdf(f"{run_id}-{index}-{n}")
                 files = {"file": ("bench.pdf", pdf, "application/pdf")}
                 await timed(
-                    lambda: client.post("/api/v1/documents/upload", files=files, headers=headers),
+                    lambda files=files: client.post(
+                        "/api/v1/documents/upload", files=files, headers=headers
+                    ),
                     lat["POST /documents/upload"],
                     errors,
                 )
@@ -110,7 +129,10 @@ async def main() -> None:
     parser.add_argument("--seconds", type=float, default=20)
     args = parser.parse_args()
     run_id = uuid.uuid4().hex[:6]
-    lat: dict[str, list[float]] = {k: [] for k in ("register", "login", "GET /auth/me", "GET /documents", "POST /documents/upload")}
+    lat: dict[str, list[float]] = {
+        k: []
+        for k in ("register", "login", "GET /auth/me", "GET /documents", "POST /documents/upload")
+    }
     errors: list[str] = []
     probe: list[float] = []
 
@@ -128,11 +150,15 @@ async def main() -> None:
     events = [asyncio.Event() for _ in range(args.users)]
     started = time.perf_counter()
     sessions = [
-        asyncio.create_task(user_session(args.base, i, run_id, args.seconds, lat, errors, events[i], go))
+        asyncio.create_task(
+            user_session(args.base, i, run_id, args.seconds, lat, errors, events[i], go)
+        )
         for i in range(args.users)
     ]
     await asyncio.gather(*(e.wait() for e in events))
-    print(f"{args.users} users registered + logged in concurrently in {time.perf_counter() - started:.1f}s")
+    print(
+        f"{args.users} users registered + logged in concurrently in {time.perf_counter() - started:.1f}s"
+    )
     go.set()
     await asyncio.gather(*sessions)
     stop.set()
@@ -145,7 +171,9 @@ async def main() -> None:
         print(summary(name, values))
     total = sum(len(v) for v in lat.values())
     print(f"\nrequests: {total}, errors: {len(errors)} {sorted(set(errors))[:5]}")
-    print(f"throughput during load phase: {sum(len(lat[k]) for k in lat if k.startswith(('GET', 'POST'))) / args.seconds:.1f} req/s")
+    print(
+        f"throughput during load phase: {sum(len(lat[k]) for k in lat if k.startswith(('GET', 'POST'))) / args.seconds:.1f} req/s"
+    )
 
 
 if __name__ == "__main__":

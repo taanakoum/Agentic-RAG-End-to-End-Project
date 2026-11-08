@@ -29,6 +29,9 @@ dependencies = [
     "pillow==13.0.0",
     "python-multipart==0.0.33",
     "fastembed==0.9.1",
+    "python-docx==1.2.0",
+    "torch==2.15.0",
+    "torchvision==0.29.2",
     "docling",
     "langchain-text-splitters",
 ]
@@ -48,6 +51,17 @@ dev = [
 
 [tool.uv]
 package = false
+
+# Linux (the container) uses PyTorch's CPU-only wheels: the default PyPI wheel drags in several GB
+# of CUDA libraries that Docling's CPU inference never uses. Windows already gets the CPU build.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["backend", "."]
@@ -72,6 +86,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "evaluation/**" = ["E501", "S311"]  # data-heavy scripts; non-cryptographic RNG
+"load_testing/**" = ["E501", "S105", "S311"]  # benchmark script: fake password, random think time
 "backend/tests/**" = ["S101", "S105", "S106", "RUF001"]  # asserts, fake secrets, intentional Unicode inputs
 
 [tool.pyright]

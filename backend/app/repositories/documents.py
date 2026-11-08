@@ -33,6 +33,7 @@ class DocumentRepository:
         mime_type: str,
         storage_key: str,
         page_count: int,
+        source_format: str = "pdf",
     ) -> tuple[Document, IngestionJob | None]:
         """Insert the document + job + outbox event in ONE transaction, or fetch the existing one.
 
@@ -52,6 +53,7 @@ class DocumentRepository:
                 storage_key=storage_key,
                 status=DocumentStatus.QUEUED.value,
                 page_count=page_count,
+                source_format=source_format,
             )
             .on_conflict_do_nothing(
                 index_elements=[Document.user_id, Document.content_hash],

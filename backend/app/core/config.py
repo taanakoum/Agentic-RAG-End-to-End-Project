@@ -129,6 +129,12 @@ class Settings(BaseSettings):
     # Documents / ingestion
     max_pdf_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
     max_pdf_pages: int = Field(default=200, ge=1)
+    max_text_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)  # txt, md, csv
+    max_table_rows: int = Field(default=50_000, ge=1)
+    max_csv_cols: int = Field(default=200, ge=1)
+    docx_max_entries: int = Field(default=3000, ge=10)
+    docx_max_uncompressed: int = Field(default=200 * 1024 * 1024, ge=1024)
+    docx_max_ratio: int = Field(default=100, ge=2)
     upload_validation_timeout_s: float = Field(default=20.0, gt=0)
     rl_upload_limit: int = Field(default=30, ge=1)
     rl_upload_window_s: int = Field(default=3600, ge=1)

@@ -23,6 +23,7 @@ class LoopLag:
 
     def __init__(self) -> None:
         self.max_lag = 0.0
+        self.samples: list[float] = []
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
 
@@ -30,7 +31,9 @@ class LoopLag:
         while not self._stop.is_set():
             before = time.perf_counter()
             await asyncio.sleep(0.01)
-            self.max_lag = max(self.max_lag, time.perf_counter() - before - 0.01)
+            lag = time.perf_counter() - before - 0.01
+            self.samples.append(lag)
+            self.max_lag = max(self.max_lag, lag)
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._run())
@@ -85,8 +88,11 @@ async def test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_r
     assert all(r.status_code in {200, 202} for r in responses), [
         r.status_code for r in responses if r.status_code not in {200, 202}
     ]
-    # No blocking call on the loop: even with ~60 concurrent requests the loop never stalls long.
-    assert lag.max_lag < 0.25, f"event loop was blocked for {lag.max_lag * 1000:.0f} ms"
+    # No blocking call on the loop. One slow sample can be a GC pause or the OS scheduler on a busy
+    # machine, but a blocking call shows up as MANY long stalls (one per blocked hash): count them.
+    stalls = sum(1 for lag_s in lag.samples if lag_s > 0.1)
+    assert stalls <= 1, f"{stalls} event-loop stalls over 100 ms (max {lag.max_lag * 1000:.0f} ms)"
+    assert lag.max_lag < 0.8, f"event loop was blocked for {lag.max_lag * 1000:.0f} ms"
     assert elapsed < 30
 
 

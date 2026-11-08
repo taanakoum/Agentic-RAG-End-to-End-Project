@@ -33,6 +33,7 @@ from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.store import IngestionStore
 from app.services.document_service import DocumentService
 from app.tasks.celery_app import celery_app
+from tests.docs_formats import docx_bytes, docx_with_macro, docx_zip_bomb
 from tests.fakes import HashEmbedder
 from tests.integration.conftest import build_app
 from tests.integration.docs_helpers import (
@@ -628,6 +629,104 @@ async def test_ingestion_with_the_real_embedding_model(
     assert all(len(p.vector["dense"]) == 384 for p in points)
     assert all(p.payload["embedding_model_version"] == "BAAI/bge-small-en-v1.5" for p in points)
     assert uuid.UUID(points[0].payload["chunk_id"])
+
+
+# ================================================================ other formats: TXT, MD, CSV, DOCX
+
+
+async def upload_named(
+    client: httpx2.AsyncClient,
+    headers: dict[str, str],
+    data: bytes,
+    name: str,
+    mime: str | None,
+) -> dict[str, Any]:
+    resp = await upload(client, headers, data, filename=name, content_type=mime)
+    assert resp.status_code == 202, resp.text
+    return await wait_for_status(
+        client, headers, resp.json()["document"]["id"], {"completed", "failed"}
+    )
+
+
+async def test_markdown_document_is_indexed_with_its_section_paths(
+    client: httpx2.AsyncClient, infra: Infrastructure
+) -> None:
+    headers = await new_user(client)
+    md = (
+        "# Operations Guide\n\n## Upload limits\n\n"
+        + "Files above twenty five megabytes are rejected by the gateway. " * 6
+        + "\n\n## Support hours\n\n"
+        + "The help desk answers tickets between eight and eighteen on weekdays. " * 6
+    )
+    doc = await upload_named(client, headers, md.encode(), "guide.md", "text/markdown")
+    assert doc["status"] == "completed", doc
+    assert (doc["source_format"], doc["parser"], doc["ocr_status"]) == (
+        "md",
+        "structured",
+        "not_needed",
+    )
+    paths = {p.payload["section_path"] for p in points_for(doc["id"])}
+    assert "Operations Guide > Upload limits" in paths
+    assert "Operations Guide > Support hours" in paths
+    key = await scalar(infra, "SELECT storage_key FROM documents")
+    assert key.endswith("/original.md")
+
+
+async def test_csv_rows_are_indexed_whole_with_their_column_names(
+    client: httpx2.AsyncClient,
+) -> None:
+    headers = await new_user(client)
+    lines = ["city,population,country"] + [f"City{i},{i * 1000},Land{i % 7}" for i in range(400)]
+    doc = await upload_named(client, headers, "\n".join(lines).encode(), "cities.csv", "text/csv")
+    assert doc["status"] == "completed", doc
+    assert doc["source_format"] == "csv"
+    texts = "\n".join(p.payload["text"] for p in points_for(doc["id"]))
+    for i in (0, 199, 399):
+        assert f"city: City{i}; population: {i * 1000}; country: Land{i % 7}" in texts
+    assert doc["chunk_count"] > 3
+
+
+async def test_docx_document_is_indexed_with_headings_and_table_rows(
+    client: httpx2.AsyncClient,
+) -> None:
+    headers = await new_user(client)
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    doc = await upload_named(client, headers, docx_bytes(), "report.docx", mime)
+    assert doc["status"] == "completed", doc
+    assert (doc["source_format"], doc["parser"]) == ("docx", "structured")
+    texts = "\n".join(p.payload["text"] for p in points_for(doc["id"]))
+    assert "Region: North; Revenue: 4.2M; Growth: 12%" in texts
+    assert "Management expects growth" in texts
+
+
+async def test_plain_text_document_is_indexed(client: httpx2.AsyncClient) -> None:
+    headers = await new_user(client)
+    text = (
+        "INTRODUCTION\n\n" + "The committee reviewed every proposal carefully before deciding. " * 8
+    )
+    doc = await upload_named(client, headers, text.encode(), "minutes.txt", "text/plain")
+    assert doc["status"] == "completed", doc
+    assert doc["source_format"] == "txt"
+    assert {p.payload["heading"] for p in points_for(doc["id"])} == {"INTRODUCTION"}
+
+
+async def test_invalid_non_pdf_uploads_are_rejected_without_side_effects(
+    client: httpx2.AsyncClient, infra: Infrastructure
+) -> None:
+    headers = await new_user(client)
+    cases = [
+        (b"caf\xe9", "latin.txt", "DOCUMENT_INVALID_ENCODING", 400),
+        (b"plain text", "fake.docx", "DOCUMENT_INVALID_FORMAT", 400),
+        (docx_with_macro(), "macro.docx", "DOCUMENT_UNSAFE", 400),
+        (docx_zip_bomb(), "bomb.docx", "DOCUMENT_UNSAFE", 400),
+        (b"anything", "tool.exe", "DOCUMENT_UNSUPPORTED_TYPE", 415),
+    ]
+    for data, name, code, status in cases:
+        resp = await upload(client, headers, data, filename=name, content_type=None)
+        assert resp.status_code == status, (name, resp.text)
+        assert resp.json()["error"]["code"] == code
+    assert await scalar(infra, "SELECT count(*) FROM documents") == 0
+    assert stored_object_count() == 0
 
 
 # ================================================================ Docling pipeline (slow)

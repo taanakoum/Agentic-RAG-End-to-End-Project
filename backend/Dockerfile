@@ -8,13 +8,17 @@ COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim AS runtime
+# Shared libraries the ONNX / PyTorch / OpenCV wheels expect on a slim image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/backend \
     PATH=/opt/venv/bin:$PATH \
     LOG_JSON=true
 RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --home /app app \
-    && mkdir -p /data/objects && chown -R app:app /data
+    && mkdir -p /data/objects /data/outbox /data/models /data/beat && chown -R app:app /data
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app/backend
 COPY --chown=app:app backend/ /app/backend/

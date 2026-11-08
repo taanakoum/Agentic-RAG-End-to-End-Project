@@ -1,5 +1,7 @@
-# UNVERIFIED: never run (Docker is not installed on the dev machine; see KNOWN_ISSUES KI-003).
-# Usage: cp .env.example .env  (set COMPOSE_POSTGRES_PASSWORD), then: docker compose up --build
+# UNVERIFIED: never run (Docker Desktop needs WSL2, which is not installed on the dev machine;
+# see docs/KNOWN_ISSUES.md KI-014). Verify with: powershell -File scripts/verify_g1.ps1
+# Usage: cp .env.example .env  (set COMPOSE_POSTGRES_PASSWORD, JWT_SECRET, MFA_ENCRYPTION_KEY),
+# then: docker compose up --build
 name: agentic-rag
 
 x-backend-env: &backend-env
@@ -13,6 +15,13 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   QDRANT_URL: http://qdrant:6333
   STORAGE_LOCAL_ROOT: /data/objects
+  EMAIL_FILE_DIR: /data/outbox
+  MODEL_CACHE_DIR: /data/models
+  HF_HOME: /data/models/hf
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (at least 32 characters)}
+  MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?set MFA_ENCRYPTION_KEY in .env (a Fernet key)}
+  PDF_PIPELINE: ${PDF_PIPELINE:-docling}
+  PARSE_MEMORY_MB: ${PARSE_MEMORY_MB:-6144}
 
 services:
   postgres:
@@ -34,6 +43,8 @@ services:
         limits: { memory: 1g }
 
   redis:
+    # Redis 8 is available under AGPLv3 (OSI) / RSALv2 / SSPL and is free to run. A BSD-licensed,
+    # protocol-compatible alternative is `valkey/valkey:8` (see docs/LICENSES.md).
     image: redis:8
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
@@ -79,11 +90,14 @@ services:
   api:
     image: agentic-rag-backend
     restart: unless-stopped
-    environment: *backend-env
+    environment:
+      <<: *backend-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2} # API processes; each has its own loop, DB pool, warm sandbox
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - objects:/data/objects
+      - outbox:/data/outbox
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -97,11 +111,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 20s
     stop_grace_period: 30s
     deploy:
       resources:
-        limits: { memory: 1g }
+        limits: { memory: 1536m }
 
   worker:
     image: agentic-rag-backend
@@ -116,6 +130,8 @@ services:
     environment: *backend-env
     volumes:
       - objects:/data/objects
+      - outbox:/data/outbox
+      - models:/data/models # embedding / Docling / OCR model caches survive restarts
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -125,14 +141,40 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 30s
     stop_grace_period: 60s
     deploy:
       resources:
-        limits: { memory: 2g }
+        # Each prefork child may run a warm Docling sandbox (up to PARSE_MEMORY_MB).
+        # Memory needed ~ concurrency x PARSE_MEMORY_MB; size this to your machine.
+        limits: { memory: 12g }
+
+  beat:
+    image: agentic-rag-backend
+    restart: unless-stopped
+    # Publishes outbox events and runs the reconciler and orphan sweep. Run exactly ONE.
+    command:
+      - celery
+      - -A
+      - app.tasks.celery_app:celery_app
+      - beat
+      - --loglevel=INFO
+      - --schedule=/data/beat/schedule
+    environment: *backend-env
+    volumes:
+      - beat:/data/beat
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512m }
 
 volumes:
   pgdata:
   redisdata:
   qdrantdata:
   objects:
+  outbox:
+  models:
+  beat:

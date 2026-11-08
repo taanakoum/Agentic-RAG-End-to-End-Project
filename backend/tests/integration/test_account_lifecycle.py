@@ -298,8 +298,13 @@ async def test_deletion_requires_authentication_and_a_body(client: httpx2.AsyncC
 
 
 async def test_reconciler_republishes_an_unfinished_account_purge(
-    client: httpx2.AsyncClient, infra: Infrastructure
+    client: httpx2.AsyncClient, infra: Infrastructure, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    async def no_kick(_infra: Infrastructure) -> None:
+        return None
+
+    # no dispatcher runs, so the (real) worker cannot finish the purge before the reconciler looks
+    monkeypatch.setattr("app.api.v1.routers.account.kick_dispatcher", no_kick)
     headers = await new_user(client)
     await client.request("DELETE", f"{AUTH}/account", headers=headers, json={"password": PASSWORD})
     async with infra.session_factory() as session:

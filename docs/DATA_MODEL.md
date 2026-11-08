@@ -41,3 +41,10 @@ documents, document_versions, ingestion_jobs, outbox_events, conversations, mess
 - `outbox_events(id bigserial, kind (ingest_document|purge_document), payload jsonb, created_at, sent_at, attempts, last_error)`; partial index on unsent rows.
 - Object keys: `<user_id>/<document_id>/original.pdf` (generated, never from filenames).
 - Qdrant collection layout: see ADR-012.
+
+## Added in migrations 0005-0007 (2026-11-08)
+- 0005: `documents.parser` (pipeline that produced the chunks).
+- 0006: `users.deleted_at timestamptz null` (tombstone for account deletion; the row is removed by the purge). Outbox kinds: `ingest_document`, `purge_document`, `purge_user`.
+- 0007: `documents.source_format` (pdf|docx|txt|md|csv, default pdf).
+- Object keys: `<user_id>/<document_id>/original.<ext>` with ext in pdf|docx|txt|md|csv.
+- Qdrant payload gained `page_end`, `section_path`, `tokens`, `text`.

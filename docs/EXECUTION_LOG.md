@@ -116,3 +116,18 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Defects found/fixed: restart test replaced the global worker runtime and broke a later test (restructured to build fresh clients without touching the live worker); SQLAlchemy DISTINCT ON deprecation (now `distinct_on`); stray placeholder code in the reconciler and a stub in extraction removed before commit; a regex typo from an editor/sed escape caught by a unit test of `normalize_text`; smoke script bug (missing auth header) unrelated to the app.
 - Not done / limits: Docker (KI-014), so test 13 is not container-level (KI-019); orphan sweep (KI-015); OCR language/layout limits and no Docling (KI-016, ADR-013); parser not sandboxed (KI-017); retrieval quality and chunk settings unevaluated (KI-018).
 - Usage: could not be measured.
+
+---
+## Entry 8: Docling + sandboxed parsing, multi-format ingestion, orphan sweep, account lifecycle, concurrency work (native; Docker still blocked)
+- Date: 2026-11-08. Branch feature/phase-3-hardening-and-ingestion. Earlier commits af631a6, caa6033; this entry's final commit follows it.
+- User request: free/open-source only; run Docker-dependent checks; fix orphans; OCR only when needed; fix parsing/chunking with an efficient method; complete KI-001 and KI-011; make everything async and multi-user friendly.
+- Built: Docling default pipeline with OCR only for pages lacking a text layer, light fallback; sandboxed warm process pools; evaluated chunking (ADR-015, 017); TXT/MD/CSV/DOCX support (KI-001); orphan sweep (KI-015); account deletion, breached-password check, verified-email gating (KI-011); concurrency changes and a benchmark (ADR-021); docs/LICENSES.md, docs/DEPLOYMENT.md.
+- Commands and ACTUAL results (after the last code change):
+  - `uv run --no-sync ruff format .` -> 128 files unchanged; `ruff check .` -> All checks passed; `pyright` (strict) -> 0 errors, 0 warnings.
+  - `uv run --no-sync pytest backend/tests -m "not docling and not real_model"` -> 525 passed, 5 deselected in 322 s.
+  - `pytest backend/tests/integration/test_documents_pipeline.py -m "docling or real_model"` -> 5 passed, 26 deselected in 134 s (real Docling conversion and real FastEmbed models).
+  - Event-loop guardrail test (production-strength Argon2, 12 users) passed 3 times in isolation; earlier it failed against a mutant that hashes on the loop.
+  - Chunking evaluation: evaluation/reports/chunking_eval.md (synthetic corpus, 36 questions). Concurrency benchmark (dev laptop, local services): earlier run recorded in ADR-021 (87 -> 259 req/s with 3 API processes; upload p50 1813 -> 227 ms). That benchmark was not re-run for this entry.
+- Defects found/fixed: Docling-labelled heading on a scanned page produced zero chunks (page fallback); rich tracebacks from Docling's dependency leaked locals and slowed logging (plain tracebacks + test); flaky loop-lag and account-purge reconciler tests made deterministic; body-limit test needed both format limits small.
+- NOT done / blocked: Docker. Docker Desktop is installed but WSL2 is not (admin + reboot needed, KI-014), so G1, spec test 13 in containers (KI-019), the Linux sandbox self-check and image build (KI-020) were NOT run. Phase 1 stays "TESTED natively, G1 not VERIFIED". S3 only verified against moto (KI-013). Admin-forced MFA open. No malware scan.
+- Usage: could not be measured.

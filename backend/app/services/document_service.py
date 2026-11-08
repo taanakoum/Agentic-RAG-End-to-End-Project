@@ -66,6 +66,7 @@ def to_public(doc: Document, latest_job_id: uuid.UUID | None) -> DocumentPublic:
         status=doc.status,
         page_count=doc.page_count,
         chunk_count=doc.chunk_count,
+        source_format=doc.source_format,
         parser=doc.parser,
         ocr_status=doc.ocr_status,
         ocr_pages=doc.ocr_pages,
@@ -133,7 +134,7 @@ class DocumentService:
         validated = await self._validate(file, filename, content_type)
 
         document_id = uuid.uuid4()
-        key = object_key(user.id, document_id)
+        key = object_key(user.id, document_id, validated.source_format)
         try:
             stored = await asyncio.to_thread(
                 self._storage.put, key, file, max_bytes=s.max_pdf_bytes
@@ -158,9 +159,10 @@ class DocumentService:
                 filename=safe_filename(filename),
                 content_hash=validated.sha256,
                 size_bytes=validated.size,
-                mime_type="application/pdf",
+                mime_type=validated.mime_type,
                 storage_key=key,
                 page_count=validated.page_count,
+                source_format=validated.source_format,
             )
             await self._session.commit()
         except BaseException:

@@ -21,6 +21,7 @@ class DocumentPublic(BaseModel):
     status: str
     page_count: int | None
     chunk_count: int | None
+    source_format: str
     parser: str | None
     ocr_status: str
     ocr_pages: int

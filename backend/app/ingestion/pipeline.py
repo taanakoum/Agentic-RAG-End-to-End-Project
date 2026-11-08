@@ -34,8 +34,8 @@ class PermanentIngestionError(Exception):
         self.message = message
 
 
-def object_key(user_id: uuid.UUID, document_id: uuid.UUID) -> str:
-    return f"{user_id}/{document_id}/original.pdf"
+def object_key(user_id: uuid.UUID, document_id: uuid.UUID, source_format: str = "pdf") -> str:
+    return f"{user_id}/{document_id}/original.{source_format}"
 
 
 def _embed(rt: WorkerRuntime, chunks: Sequence[Chunk]) -> tuple[list[list[float]], list[SparseVec]]:
@@ -113,7 +113,11 @@ def _process(rt: WorkerRuntime, store: IngestionStore, claim: JobClaim) -> str:
         )
     try:
         parsed = parse_bytes(
-            rt.parser, data, title=Path(filename).stem or "document", page_count=doc.page_count or 1
+            rt.parser,
+            data,
+            title=Path(filename).stem or "document",
+            page_count=doc.page_count or 1,
+            source_format=doc.source_format,
         )
     except ParseError as exc:
         raise PermanentIngestionError(exc.code, exc.message) from exc

@@ -20,7 +20,14 @@ from typing import Any, Protocol
 
 from app.core.config import Settings
 from app.core.logging import get_logger
-from app.ingestion.chunking import Chunk, chunk_pages, contextual_text, estimate_tokens
+from app.ingestion.chunking import (
+    Block,
+    Chunk,
+    chunk_blocks,
+    chunk_pages,
+    contextual_text,
+    estimate_tokens,
+)
 from app.ingestion.sandbox import (
     PersistentSandbox,
     SandboxError,
@@ -62,9 +69,13 @@ class ParsedDocument:
 
 
 class PdfParser(Protocol):
-    def inspect(self, path: Path) -> InspectResult: ...
+    """Parses any supported upload (the name is historical; PDF is the default format)."""
 
-    def parse(self, path: Path, *, title: str, page_count: int) -> ParsedDocument: ...
+    def inspect(self, path: Path, source_format: str = "pdf") -> InspectResult: ...
+
+    def parse(
+        self, path: Path, *, title: str, page_count: int, source_format: str = "pdf"
+    ) -> ParsedDocument: ...
 
 
 def _error_from_sandbox(exc: SandboxError) -> ParseError:
@@ -134,14 +145,14 @@ class SandboxedPdfParser:
 
     # ------------------------------------------------------------------ inspect (cheap)
 
-    def inspect(self, path: Path) -> InspectResult:
+    def inspect(self, path: Path, source_format: str = "pdf") -> InspectResult:
         s = self._s
         try:
             result = self._call(
                 "inspect",
                 "inspect",
                 path,
-                {},
+                self._options(source_format),
                 timeout_s=s.inspect_timeout_s,
                 memory_mb=s.inspect_memory_mb,
                 pool_size=s.inspect_pool_size,
@@ -156,9 +167,16 @@ class SandboxedPdfParser:
 
     # ------------------------------------------------------------------ parse + chunk
 
-    def _options(self) -> dict[str, Any]:
+    def _options(self, source_format: str = "pdf") -> dict[str, Any]:
         s = self._s
         return {
+            "format": source_format,
+            "max_text_bytes": s.max_text_bytes,
+            "max_table_rows": s.max_table_rows,
+            "max_csv_cols": s.max_csv_cols,
+            "docx_max_entries": s.docx_max_entries,
+            "docx_max_uncompressed": s.docx_max_uncompressed,
+            "docx_max_ratio": s.docx_max_ratio,
             "min_text_chars_per_page": s.min_text_chars_per_page,
             "ocr_enabled": s.ocr_enabled,
             "ocr_max_pages": s.ocr_max_pages,
@@ -168,7 +186,9 @@ class SandboxedPdfParser:
             "max_tokens": s.docling_max_tokens,
         }
 
-    def _run(self, command: str, path: Path, page_count: int) -> dict[str, Any]:
+    def _run(
+        self, command: str, path: Path, page_count: int, source_format: str = "pdf"
+    ) -> dict[str, Any]:
         s = self._s
         timeout = min(
             s.parse_timeout_max_s, s.parse_timeout_base_s + s.parse_timeout_per_page_s * page_count
@@ -177,7 +197,7 @@ class SandboxedPdfParser:
             "parse",
             command,
             path,
-            self._options(),
+            self._options(source_format),
             timeout_s=timeout,
             memory_mb=s.parse_memory_mb,
             pool_size=s.parse_pool_size,
@@ -188,7 +208,14 @@ class SandboxedPdfParser:
             )
         return result
 
-    def parse(self, path: Path, *, title: str, page_count: int) -> ParsedDocument:
+    def parse(
+        self, path: Path, *, title: str, page_count: int, source_format: str = "pdf"
+    ) -> ParsedDocument:
+        if source_format != "pdf":
+            try:
+                return self._parse_structured(path, title, source_format)
+            except SandboxError as exc:
+                raise _error_from_sandbox(exc) from exc
         if self._s.pdf_pipeline == "docling":
             try:
                 return self._parse_docling(path, title, page_count)
@@ -237,6 +264,28 @@ class SandboxedPdfParser:
             "docling",
         )
 
+    def _parse_structured(self, path: Path, title: str, source_format: str) -> ParsedDocument:
+        """TXT, Markdown, CSV and DOCX: structure comes from the format, never from OCR."""
+        s = self._s
+        result = self._run("structured", path, 1, source_format)
+        if "pages" in result:  # plain text: same repair + heuristics as PDF text
+            chunks = self._chunk_text_pages(result["pages"], title)
+        else:
+            blocks = [
+                Block(kind=str(b["kind"]), text=str(b["text"]), level=int(b.get("level", 1)))
+                for b in result["blocks"]
+            ]
+            raw = chunk_blocks(
+                blocks,
+                target_tokens=s.chunk_target_tokens,
+                max_tokens=s.chunk_max_tokens,
+                min_tokens=s.chunk_min_tokens,
+                overlap_tokens=s.chunk_overlap_tokens,
+                min_chars=min(s.min_chunk_chars, 8),  # short table rows are still real content
+            )
+            chunks = [replace(c, embed_text=contextual_text(c, title=title)) for c in raw]
+        return ParsedDocument(chunks, 1, "not_needed", 0, "structured")
+
     def _chunk_text_pages(self, raw_pages: list[dict[str, Any]], title: str) -> list[Chunk]:
         s = self._s
         pages = [
@@ -277,9 +326,16 @@ class SandboxedPdfParser:
         )
 
 
-def parse_bytes(parser: PdfParser, data: bytes, *, title: str, page_count: int) -> ParsedDocument:
-    """Write the PDF to a private temp file, parse it, delete it."""
-    with tempfile.TemporaryDirectory(prefix="pdf-") as directory:
-        path = Path(directory) / "document.pdf"
+def parse_bytes(
+    parser: PdfParser,
+    data: bytes,
+    *,
+    title: str,
+    page_count: int,
+    source_format: str = "pdf",
+) -> ParsedDocument:
+    """Write the document to a private temp file, parse it, delete it."""
+    with tempfile.TemporaryDirectory(prefix="doc-") as directory:
+        path = Path(directory) / f"document.{source_format}"
         path.write_bytes(data)
-        return parser.parse(path, title=title, page_count=page_count)
+        return parser.parse(path, title=title, page_count=page_count, source_format=source_format)
