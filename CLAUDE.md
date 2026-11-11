@@ -51,5 +51,13 @@ Small increments: define -> implement -> test -> review -> integrate -> verify -
 - Skills in `.claude/skills/`: `rag-phase-runner`, `rag-verification-gate`, `rag-concurrency-reliability`, `rag-citation-and-response`, `rag-checkpoint-handoff`.
 - Commands: `/next-phase`, `/checkpoint`, `/verify-gate`.
 
+## Model escalation (internal note: Sonnet executes, Opus plans when stuck)
+Default model for execution is Sonnet 5.5. Switch to **Opus 5.5 for reasoning and planning only** when Sonnet cannot finish a task or the task is too complicated, then go back to Sonnet to execute.
+- Escalate when: the same problem failed after two honest attempts; a root cause stays unexplained (flaky test, race, deadlock); a design needs deep reasoning (concurrency or security protocols, algorithm or schema choices with real trade-offs, a refactor across many modules with unclear coupling); the spec can be read two ways and the choice is expensive to undo.
+- Do NOT escalate for routine work (CRUD, wiring, docs, lint/type fixes, writing tests from a clear design).
+- How: spawn one Agent with `model: "opus"` (a fresh, self-contained prompt: the problem, constraints from this file and the spec, the relevant file paths, what was tried and the exact evidence such as error output). Ask for analysis and a step-by-step plan only; do not let it edit files. If subagents are unavailable or usage is above ~75%, ask the user to switch with `/model` instead, or reason in a single focused pass and record the limit.
+- Then Sonnet implements the plan itself, verifies it with real commands, and continues. The plan is advice: re-check its claims against the code and tests before relying on them.
+- Record each escalation in `docs/EXECUTION_LOG.md` (problem, why escalated, what the plan said, whether it worked). The usage rule above still applies: no escalation when usage is near the limit.
+
 ## Progress reports
 After each phase: phase, components built, tests actually run + results, problems found/resolved, remaining work, next step. Keep it concise.
