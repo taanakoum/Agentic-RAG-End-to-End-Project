@@ -67,3 +67,26 @@ $env:PYTHONPATH="backend;."; uv run --no-sync python evaluation/generation/run_e
 The second command writes `evaluation/reports/generation_eval.md` (JSON validity, repair/fallback rates, citation validity against the gold chunk, refusal accuracy, latency, 429 count).
 
 Verified against a live provider (2026-11-11, Gemini free tier, key supplied by the user and used only via environment variables): `pytest -m real_llm` passed with `gemini-2.5-flash` and `gemini-3.5-flash-lite`; `evaluation/generation/run_eval.py` on `gemini-3.5-flash-lite` gave 0 provider errors over 46 questions (see `evaluation/reports/generation_eval.md`). Rotate any key that was ever pasted into a chat or terminal log.
+
+## Where the model settings live: `.env`
+All model settings are in the project's `.env` (gitignored; never commit it): `LLM_BASE_URL`, `LLM_MODEL`, `LLM_FALLBACK_MODELS`, `LLM_API_KEY`, `LLM_JSON_MODE`, `LLM_MAX_TOKENS`, plus the quota settings below. The application, the worker and the evaluation scripts read them from there. The automated test suite deliberately blanks every `LLM_*` variable, so tests can never reach the hosted model or spend quota, even with a real key in `.env`.
+
+## Calibrating daily usage (free tier)
+What was measured on 2026-11-11 with the Gemini free tier (one key, one project):
+| Model | Observed | Consequence |
+|---|---|---|
+| `gemini-2.5-flash` | 22 requests succeeded, then `429 quota exceeded` for the rest of the day | too small for evaluation or sharing; avoid as primary |
+| `gemini-3.5-flash-lite` | 46 evaluation questions + 2 end-to-end runs + probes (about 55 requests) with 0 `429` | chosen primary |
+| `gemini-flash-lite-latest` | answered a probe | chosen as fallback (quota is per model) |
+What one chat turn costs: smalltalk and clarification 0 model calls; a normal document question 1 call (the evaluation measured a mean of 1.00 calls, 0 repairs); a short follow-up that needs a rewrite 2 calls; a repair adds 1. A cache hit costs 0 (KI-031: hits are rare in multi-turn chat).
+The guard (`app/llm/budget.py`) counts every request that is about to reach the provider, per model, in Redis, and refuses locally before the provider does:
+| Setting (in `.env`) | Value set | Meaning |
+|---|---|---|
+| `LLM_DAILY_REQUEST_BUDGET` | 150 | requests per model per provider day. A conservative guess below what was observed to work; NOT a verified cap. Lower it if you ever see a provider 429 before the budget is used up |
+| `LLM_REQUESTS_PER_MINUTE` | 10 | per model; below typical free-tier RPM limits |
+| `LLM_QUOTA_TIMEZONE` | `America/Los_Angeles` | the provider's day rolls over at midnight there (Gemini); `Retry-After` is the real time until then |
+| `RL_CHAT_DAILY_LIMIT` | 60 | chat turns per user per 24 h, so one user cannot spend the shared quota |
+| `LLM_MAX_CONCURRENCY` / `_PER_USER` | 3 / 2 | simultaneous model calls overall / per user |
+When a model's budget is used up the next fallback model is tried; when all are used up the user gets `429 MODEL_RATE_LIMITED` with an accurate `Retry-After`. `GET /api/v1/health/llm` shows `configured`, `remaining_today` and `resets_in_s` (no key, no names). The guard counts only what THIS application sends: anything else using the same key (other tools, the provider's own console) also consumes the real quota, so keep the budget below the real cap.
+Testing policy so the quota is never exhausted: automated tests use 0 calls; `pytest -m real_llm` uses 1 call; `python evaluation/generation/run_eval.py` uses about 50 calls and refuses to start if today's remaining budget is too small (use `--limit 12` for a smoke run, at most one full run per day, and it counts against the same budget). Never run the evaluation in a loop.
+

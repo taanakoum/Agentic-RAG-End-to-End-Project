@@ -181,3 +181,9 @@ Planned with an Opus 5.5 pass (CLAUDE.md "Model escalation"); executed and verif
 - Code: `agent_config.mode` and `AgentMetadata.execution_mode` accept only `"single"` (a request for `"multi"` is a 422). `RAGResponse.schema_version` stays "1.0".
 - Consequences: no supervisor/critic/synthesis agents, no single-vs-multi benchmark; the evaluation configurations are baseline / hybrid / reranked / best-evaluated (single agent). Fewer model calls per turn (one answer call, plus an optional rewrite/repair call), which also protects the free-tier quota.
 
+## ADR-029 (2026-11-11): Free-tier quota guard and `.env` model configuration
+- Problem observed live: a free model hit its daily cap after 22 requests and every later request became a 429 (KI-035). Decision: count requests in Redis per model per provider day and per minute BEFORE calling the provider (`QuotaGuard`), refuse locally, let the fallback chain use the next model, and report an accurate `Retry-After`. Refused attempts cost no quota (counters are given back), concurrent requests cannot exceed the budget (atomic increments, tested with 40 parallel reservations), Redis problems fail open, an unknown timezone falls back to UTC.
+- A per-user daily chat limit (`RL_CHAT_DAILY_LIMIT`) keeps one user from consuming the shared quota; the generation evaluation uses the same counters and refuses to run when the remaining budget is smaller than the run needs.
+- The API key and all model settings are in the gitignored `.env` (never in code, logs, memory notes or git; `SecretStr`), and the test suite blanks `LLM_*`.
+- Defaults in code are 0 = unlimited so the guard never surprises a self-hosted endpoint; the `.env` of this project sets 150/day, 10/min, 60 turns/user/day (calibration in docs/DEPLOYMENT.md, explicitly a conservative guess).
+

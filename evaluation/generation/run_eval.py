@@ -42,6 +42,7 @@ from app.agents.state import TurnContext, fresh_turn_state
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.ingestion.embedding import FastEmbedEmbedder
+from app.llm.budget import QuotaGuard
 from app.llm.cache import LLMGateway
 from app.llm.openai_compat import OpenAICompatibleModel
 from app.retrieval.models import RetrievalMode, RetrievalResult
@@ -80,22 +81,24 @@ def overlap_tokens(sentence: str) -> set[str]:
     }
 
 
-async def main_async(delay: float, limit: int | None) -> None:
-    base, key, model = (
-        os.environ.get(n, "") for n in ("REAL_LLM_BASE_URL", "REAL_LLM_API_KEY", "REAL_LLM_MODEL")
-    )
+async def main_async(delay: float, limit: int | None, force: bool) -> None:
+    configured = get_settings()  # LLM_* from the environment / .env
+    base = os.environ.get("REAL_LLM_BASE_URL") or configured.llm_base_url
+    key = os.environ.get("REAL_LLM_API_KEY") or configured.llm_api_key.get_secret_value()
+    model = os.environ.get("REAL_LLM_MODEL") or configured.llm_model
     if not (base and key and model):
-        raise SystemExit("export REAL_LLM_BASE_URL, REAL_LLM_API_KEY and REAL_LLM_MODEL first")
-    settings = get_settings().model_copy(
+        raise SystemExit("set LLM_BASE_URL, LLM_API_KEY and LLM_MODEL in .env (or REAL_LLM_*)")
+    fallbacks = [
+        m for m in os.environ.get("REAL_LLM_FALLBACK_MODELS", "").split(",") if m.strip()
+    ] or configured.llm_fallback_models
+    settings = configured.model_copy(
         update={
             "qdrant_collection_prefix": "evalgen_",
             "pdf_pipeline": "docling",
             "llm_base_url": base,
             "llm_api_key": SecretStr(key),
             "llm_model": model,
-            "llm_fallback_models": [
-                m for m in os.environ.get("REAL_LLM_FALLBACK_MODELS", "").split(",") if m.strip()
-            ],
+            "llm_fallback_models": fallbacks,
             "llm_cache_enabled": False,  # measure the model, not the cache
             "rerank_timeout_s": 300.0,
             "retrieval_timeout_s": 300.0,
@@ -112,8 +115,25 @@ async def main_async(delay: float, limit: int | None) -> None:
     retriever = Retriever(qdrant, settings, embedder, reranker, ThreadPoolExecutor(max_workers=2))
     doc_ids = [doc_id(d.name) for d in DOCS]
     redis = Redis.from_url(settings.redis_url)  # pyright: ignore[reportUnknownMemberType]
-    real = OpenAICompatibleModel(settings)
+    questions: list[tuple[str, str, Any]] = [("answerable", f.question, f) for f in all_facts()]
+    questions += [("unanswerable", q, None) for q in UNANSWERABLE]
+    if limit:
+        questions = questions[:limit]
+    quota = QuotaGuard(redis, settings)  # the evaluation shares the application's daily budget
+    real = OpenAICompatibleModel(settings, quota=quota)
     gateway = LLMGateway(real, redis, settings)
+    needed = len(questions) + 4  # about one call per question plus a few repairs/rewrites
+    usage = (await quota.usage([model]))[0]
+    print(
+        f"quota: used today {usage.used_today} of {usage.daily_budget or 'unlimited'} "
+        f"(remaining {usage.remaining}); this run needs about {needed}",
+        flush=True,
+    )
+    if usage.remaining is not None and usage.remaining < needed and not force:
+        raise SystemExit(
+            f"only {usage.remaining} requests left today for {model}; run with --limit "
+            f"{max(1, usage.remaining - 4)} or tomorrow, or pass --force"
+        )
     graph = build_single_agent_graph(None, repair_budget=settings.llm_repair_attempts)
 
     async def search(query: str) -> RetrievalResult:
@@ -142,10 +162,6 @@ async def main_async(delay: float, limit: int | None) -> None:
     async def persist(_response: dict[str, Any]) -> uuid.UUID:
         return uuid.uuid4()
 
-    questions: list[tuple[str, str, Any]] = [("answerable", f.question, f) for f in all_facts()]
-    questions += [("unanswerable", q, None) for q in UNANSWERABLE]
-    if limit:
-        questions = questions[:limit]
     rows: list[dict[str, Any]] = []
     for kind, question, fact in questions:
         ctx = TurnContext(
@@ -277,8 +293,11 @@ def main() -> None:
     parser.add_argument(
         "--limit", type=int, default=None, help="only the first N questions (smoke run)"
     )
+    parser.add_argument(
+        "--force", action="store_true", help="run even if today's budget looks too small"
+    )
     args = parser.parse_args()
-    asyncio.run(main_async(args.delay, args.limit))
+    asyncio.run(main_async(args.delay, args.limit, args.force))
 
 
 if __name__ == "__main__":
