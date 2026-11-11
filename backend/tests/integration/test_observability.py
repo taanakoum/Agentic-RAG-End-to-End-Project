@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import httpx2
 import pytest
+from opentelemetry.trace import SpanKind
 
 from app.infra.container import Infrastructure
 from app.ingestion.runtime import WorkerRuntime
@@ -67,7 +68,7 @@ async def test_a_chat_turn_is_one_trace_from_the_http_request_down_to_the_model_
     assert response.headers["x-trace-id"] == trace  # a user can quote it in a bug report
 
     # the request id (log correlation) is on the server span of the same trace
-    server = next(s for s in th.spans() if s.name.startswith("POST") and th.trace_id_of(s) == trace)
+    server = next(s for s in th.spans() if s.kind is SpanKind.SERVER and th.trace_id_of(s) == trace)
     assert server.attributes is not None
     assert server.attributes["app.request_id"] == response.headers["x-request-id"]
 
@@ -133,7 +134,7 @@ async def test_user_content_never_reaches_a_span_or_an_event(
     ]
     for needle in forbidden:
         assert needle not in dump, needle
-    server = next(s for s in th.spans() if s.name.startswith("POST"))
+    server = next(s for s in th.spans() if s.kind is SpanKind.SERVER)
     assert server.attributes is not None
     assert "Authorization" not in dump and "Bearer" not in dump
     assert not any(key.startswith("http.request.header") for key in server.attributes)
@@ -176,7 +177,7 @@ async def test_ingestion_in_the_worker_continues_the_trace_of_the_upload_request
     assert {"ingestion.parse", "ingestion.embed", "ingestion.index"} <= stages
     assert task[0].attributes is not None and task[0].attributes["job.outcome"]
     parse = th.named("ingestion.parse")[0]
-    assert parse.attributes is not None and parse.attributes["ingestion.chunks"] >= 2
+    assert parse.attributes is not None and int(str(parse.attributes["ingestion.chunks"])) >= 2
     assert th.metric_points("ingestion.stage.duration")
     assert "private-report" not in th.serialized()  # the file name is user content
 
