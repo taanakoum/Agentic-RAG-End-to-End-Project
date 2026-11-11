@@ -48,3 +48,20 @@ An S3-compatible store can replace the local volume (see ADR-011; verified again
 `scripts/dev_services.ps1` starts PostgreSQL, Redis and Qdrant from `C:\Users\ali_a\devtools`.
 Run tests with `export UV_PROJECT_ENVIRONMENT=C:/Users/ali_a/devtools/venv` then
 `uv run --no-sync pytest`. No cloud account or paid service is needed anywhere.
+
+## Language model (free hosted API; no local model)
+The platform talks to ONE OpenAI-compatible endpoint, so any of these free options is configuration only. Nothing has been created for you and no account was opened; names and free-tier limits change, so confirm on the provider's site.
+| Provider | `LLM_BASE_URL` | Example `LLM_MODEL` | Notes |
+|---|---|---|---|
+| Google Gemini (AI Studio key) | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash` | free tier with rate limits; check the data-use terms |
+| OpenRouter | `https://openrouter.ai/api/v1` | a model ending in `:free` | set `LLM_EXTRA_HEADERS={"HTTP-Referer":"http://localhost","X-Title":"agentic-rag"}` if required |
+| Groq | `https://api.groq.com/openai/v1` | e.g. `llama-3.3-70b-versatile` | very fast, strict free limits |
+| Hugging Face Inference Providers | `https://router.huggingface.co/v1` | a model id from the router catalogue | uses your HF token as the key |
+Set in `.env` (never commit): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, optionally `LLM_FALLBACK_MODELS=model-a,model-b` (tried in order on 429/404/5xx), `LLM_JSON_MODE=json_object|json_schema|prompt` (use `prompt` if a provider rejects `response_format`; a 400 also downgrades automatically), `LLM_MAX_CONCURRENCY`, `LLM_CACHE_TTL_S`. Without a key, smalltalk and clarification still work and document questions return `503 MODEL_NOT_CONFIGURED`.
+Verify with a real model (the test suite itself never calls one):
+```
+$env:REAL_LLM_BASE_URL="..."; $env:REAL_LLM_API_KEY="..."; $env:REAL_LLM_MODEL="..."
+uv run --no-sync pytest backend/tests/integration/test_chat_e2e.py -m real_llm -s
+$env:PYTHONPATH="backend;."; uv run --no-sync python evaluation/generation/run_eval.py --delay 4
+```
+The second command writes `evaluation/reports/generation_eval.md` (JSON validity, repair/fallback rates, citation validity against the gold chunk, refusal accuracy, latency, 429 count).

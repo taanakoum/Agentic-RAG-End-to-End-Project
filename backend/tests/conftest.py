@@ -29,6 +29,10 @@ os.environ["EMAIL_FILE_DIR"] = str(_TMP_ROOT / "outbox")
 # the deterministic HashEmbedder has its own score scale; the real default (0.6) is calibrated
 # for the real model in evaluation/memory/calibrate.py and tested in the real_model test
 os.environ["MEMORY_MIN_SCORE"] = "0.5"
+# The test suite must NEVER reach a hosted model, even if the developer put a key in .env.
+# Environment variables beat .env, so blank them; real_llm tests read REAL_LLM_* explicitly.
+for _name in ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL", "LLM_FALLBACK_MODELS"):
+    os.environ[_name] = ""
 os.environ["PDF_PIPELINE"] = "light"  # fast; Docling is exercised by dedicated tests
 os.environ["INGESTION_MAX_ATTEMPTS"] = "3"
 os.environ["INGESTION_RETRY_BASE_S"] = "0.05"

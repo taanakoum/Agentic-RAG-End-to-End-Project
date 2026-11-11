@@ -99,3 +99,13 @@ Another user's session is a 404 identical to an unknown id. Agent options are li
 | PATCH | /users/me/preferences | `{memory_enabled?, memory_retention_days? 1-3650}` | preferences | 401, 422 |
 
 `/memory/search` previews what the agent would see and ignores the consent switch; the agent path itself uses memory only when `memory_enabled` is true.
+
+## Chat (Phase 6; Bearer required, verified email when `REQUIRE_VERIFIED_EMAIL=true`)
+| Method | Path | Body / headers | Success | Errors |
+|---|---|---|---|---|
+| POST | /chat | `{session_id, message (1..100000)}` + header `Idempotency-Key` (8-128 chars of A-Z a-z 0-9 _ . : -) | 200 `{session_id, execution_id, user_message_id, assistant_message_id, replayed, response: RAGResponse}` | 401, 403, 404, 409 (`CONCURRENCY_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `TURN_FAILED`), 422, 429 (`RATE_LIMIT_EXCEEDED`, `MODEL_RATE_LIMITED` + Retry-After), 502 `MODEL_PROVIDER_ERROR`, 503 (`MODEL_NOT_CONFIGURED`, `PERSISTENCE_FAILED`, `SERVICE_UNAVAILABLE`), 504 `MODEL_TIMEOUT` |
+| POST | /chat/stream | same | 200 `text/event-stream`: `start`, `status*`, `token*`, `citation*`, `complete` or `error` | the refusals above (before the stream opens) are plain JSON |
+
+`RAGResponse` (schema_version "1.0", unknown fields rejected): `{answer, citations[{document_id, document_name, page_number, chunk_id, excerpt}], insufficient_evidence, clarification_needed, follow_up_questions, metadata{execution_mode, model_name, retrieval_used, reranking_used, answer_support supported|inference|not_found|none, cache_status hit|miss|bypass|error|none, llm_calls, degraded[], route}}`. Citations are built by the server from stored data; `[1]`, `[2]` markers in `answer` index into `citations` in order.
+SSE events (JSON `data:` per frame, `event:` = `type`): `start{session_id, execution_id, user_message_id, replayed}`, `status{stage: retrieving|generating|repairing|verifying|saving}`, `token{index, text}` (slices of the validated, already saved answer; concatenated = `answer`), `citation{index, citation}`, `complete{assistant_message_id, response}`, `error{code, message, retryable, retry_after_s}`; `: keep-alive` comments every 15 s. After `start` exactly one terminal event (`complete` or `error`) follows. A client disconnect cancels the turn (the user message stays, no assistant message exists, the session is free). Replaying the key of a completed turn streams the stored answer (`start.replayed=true`, no `status`, no model call).
+`degraded` values: `unverified_answer` (the safe fallback replaced an answer that could not be verified), `rewrite_fallback`, `memory_unavailable`, `rerank_timeout`, `rerank_unavailable`, `dense_unavailable`, `sparse_unavailable`.

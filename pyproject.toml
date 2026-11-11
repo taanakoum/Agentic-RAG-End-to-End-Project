@@ -77,6 +77,7 @@ markers = [
     "integration: needs real PostgreSQL/Redis/Qdrant (native dev services or Docker)",
     "real_model: downloads and runs the real embedding models (slow, needs network on first run)",
     "docling: runs the Docling pipeline (loads layout models; ~20 s per document)",
+    "real_llm: calls a REAL free hosted model (needs REAL_LLM_* env vars; skipped otherwise)",
 ]
 
 [tool.ruff]
