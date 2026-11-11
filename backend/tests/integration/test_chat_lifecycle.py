@@ -245,3 +245,43 @@ async def test_the_orphan_checkpoint_sweep_task_runs_in_the_worker(
 def test_the_checkpoint_sweep_is_scheduled_by_beat() -> None:
     schedule = celery_app.conf.beat_schedule
     assert schedule["sweep-checkpoints"]["task"] == "chat.sweep_checkpoints"
+
+
+async def cache_keys(infra: Infrastructure) -> list[str]:
+    found: list[str] = []
+    async for key in infra.redis.scan_iter(match="llmc:v1:u:*"):  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        found.append(key.decode() if isinstance(key, bytes) else str(key))  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+    return found
+
+
+async def test_deleting_the_account_removes_the_users_cached_answers(
+    client: httpx2.AsyncClient, infra: Infrastructure
+) -> None:
+    from app.llm.base import ChatMessage, LLMRequest
+    from app.llm.cache import LLMGateway
+    from tests.fakes import ScriptedModel
+
+    headers = await new_user(client)
+    me = await client.get(f"{API}/auth/me", headers=headers)
+    user = uuid.UUID(me.json()["id"])
+    other = uuid.uuid4()
+    gateway = LLMGateway(ScriptedModel("cached"), infra.redis, get_settings())
+    for owner, text_ in ((user, "mine"), (other, "someone else's")):
+        request = LLMRequest(messages=(ChatMessage("user", text_),), user_id=owner)
+        await gateway.remember(await gateway.complete(request))
+    assert len(await cache_keys(infra)) == 2
+    resp = await client.request(
+        "DELETE",
+        f"{API}/auth/account",
+        json={"password": "correct-horse-battery-staple"},
+        headers=headers,
+    )
+    assert resp.status_code == 202
+
+    async def purged() -> bool:
+        return (
+            len(await cache_keys(infra)) == 1
+            and await scalar(infra, "SELECT count(*) FROM users WHERE id = :u", u=user) == 0
+        )
+
+    await eventually(purged)

@@ -27,6 +27,8 @@ from app.infra.clients import create_async_qdrant, create_async_redis
 from app.infra.email import EmailSender, create_email_sender
 from app.infra.rate_limit import RateLimiter
 from app.ingestion.parsing import SandboxedPdfParser
+from app.llm.cache import LLMGateway
+from app.llm.openai_compat import OpenAICompatibleModel
 from app.storage.base import ObjectStorage
 from app.storage.factory import create_storage
 
@@ -48,11 +50,14 @@ class Infrastructure:
     sync_session_factory: sessionmaker[Session]
     inference_executor: ThreadPoolExecutor
     checkpointer: CheckpointerProvider
+    llm: LLMGateway
+    llm_model: OpenAICompatibleModel
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
         engine = create_async_db_engine(settings)
         redis = create_async_redis(settings)
+        llm_model = OpenAICompatibleModel(settings)
         sync_engine = create_sync_db_engine(settings)
         return cls(
             settings=settings,
@@ -71,6 +76,8 @@ class Infrastructure:
             ),
             sync_session_factory=sync_session_factory(sync_engine),
             checkpointer=CheckpointerProvider(settings),
+            llm=LLMGateway(llm_model, redis, settings),
+            llm_model=llm_model,
             inference_executor=ThreadPoolExecutor(
                 max_workers=settings.inference_threads, thread_name_prefix="inference"
             ),
@@ -78,6 +85,7 @@ class Infrastructure:
 
     async def close(self) -> None:
         await self.checkpointer.close()
+        await self.llm_model.aclose()
         await self.engine.dispose()
         self.sync_engine.dispose()
         self.validation_executor.shutdown(wait=False, cancel_futures=True)

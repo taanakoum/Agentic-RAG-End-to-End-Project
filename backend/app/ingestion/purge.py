@@ -8,9 +8,11 @@ from sqlalchemy import select
 
 from app.chat.purge import delete_checkpoint_threads
 from app.core.logging import get_logger
+from app.infra.clients import create_sync_redis
 from app.ingestion.indexing import delete_document_points, delete_user_points
 from app.ingestion.runtime import WorkerRuntime
 from app.ingestion.store import IngestionStore
+from app.llm.cache import purge_user_cache_sync
 from app.memory.index import delete_user_vectors
 from app.models.chat import Conversation
 
@@ -46,6 +48,15 @@ def purge_document(rt: WorkerRuntime, document_id: uuid.UUID, user_id: uuid.UUID
     return "purged"
 
 
+def _purge_llm_cache(rt: WorkerRuntime, user_id: uuid.UUID) -> None:
+    """Cached answers contain the user's document text: remove them with the account."""
+    redis = create_sync_redis(rt.settings)
+    try:
+        purge_user_cache_sync(redis, user_id)
+    finally:
+        redis.close()
+
+
 def purge_user(rt: WorkerRuntime, user_id: uuid.UUID) -> str:
     """Final step of account deletion: vectors, stored files, then the user row (cascades).
 
@@ -64,6 +75,7 @@ def purge_user(rt: WorkerRuntime, user_id: uuid.UUID) -> str:
             raise PurgeBusyError(str(user_id))
         delete_user_points(rt.qdrant, rt.settings, user_id=user_id)
         delete_user_vectors(rt.qdrant, rt.settings, user_id=user_id)
+        _purge_llm_cache(rt, user_id)
         rt.storage.delete_prefix(str(user_id))
         threads = list(
             session.execute(

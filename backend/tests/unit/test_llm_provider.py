@@ -121,13 +121,13 @@ async def test_defaults_come_from_the_settings() -> None:
 # ------------------------------------------------------------------ retries
 
 
-async def test_rate_limits_are_retried_with_backoff_and_retry_after_is_honoured() -> None:
-    calls = iter([429, 429, 200])
+async def test_server_errors_with_retry_after_are_retried_after_at_least_that_long() -> None:
+    calls = iter([503, 503, 200])
 
     def handler(_r: httpx.Request) -> httpx.Response:
         status = next(calls)
-        if status == 429:
-            return httpx.Response(429, headers={"Retry-After": "0.04"}, text="quota exceeded")
+        if status == 503:
+            return httpx.Response(503, headers={"Retry-After": "0.04"}, text="overloaded")
         return ok()
 
     h = Harness(handler)
@@ -137,18 +137,42 @@ async def test_rate_limits_are_retried_with_backoff_and_retry_after_is_honoured(
     assert all(s <= 0.05 + 0.01 for s in h.sleeps)  # bounded by LLM_RETRY_MAX_S (+ jitter)
 
 
+async def test_a_retry_after_beyond_the_cap_skips_the_pointless_retries() -> None:
+    h = Harness(
+        lambda _r: httpx.Response(503, headers={"Retry-After": "600"}),
+        llm_retry_max_s=0.05,
+    )
+    with pytest.raises(ModelProviderError):
+        await h.model.complete(request())
+    assert len(h.requests) == 1 and h.sleeps == []
+
+
+async def test_rate_limits_are_not_retried_against_the_same_model() -> None:
+    h = Harness(lambda _r: httpx.Response(429, headers={"Retry-After": "9"}, text="quota"))
+    with pytest.raises(ModelRateLimitedError) as exc:
+        await h.model.complete(request())
+    assert len(h.requests) == 1 and h.sleeps == []  # no retry storm on a throttled model
+    assert exc.value.headers["Retry-After"] == "9" and "quota" not in str(exc.value)
+
+
 async def test_server_errors_are_retried_then_succeed() -> None:
     calls = iter([503, 500, 200])
     h = Harness(lambda _r: ok() if (s := next(calls)) == 200 else httpx.Response(s))
     assert (await h.model.complete(request())).attempts == 3
 
 
-async def test_persistent_rate_limiting_becomes_a_429_with_retry_after() -> None:
-    h = Harness(lambda _r: httpx.Response(429, headers={"Retry-After": "17"}, text="secret detail"))
+async def test_when_every_model_is_throttled_the_smallest_retry_after_is_reported() -> None:
+    waits = {"primary-model": "30", "b1": "17", "b2": "45"}
+
+    def handler(r: httpx.Request) -> httpx.Response:
+        model = json.loads(r.content)["model"]
+        return httpx.Response(429, headers={"Retry-After": waits[model]}, text="secret detail")
+
+    h = Harness(handler, llm_fallback_models=["b1", "b2"])
     with pytest.raises(ModelRateLimitedError) as exc:
         await h.model.complete(request())
     assert exc.value.status_code == 429 and exc.value.headers["Retry-After"] == "17"
-    assert "secret detail" not in str(exc.value) and len(h.requests) == 3  # 1 + 2 retries
+    assert "secret detail" not in str(exc.value) and len(h.requests) == 3  # one per model
 
 
 async def test_persistent_server_errors_become_a_502_without_provider_details() -> None:
@@ -215,15 +239,93 @@ async def test_an_unknown_primary_model_falls_back_to_the_next() -> None:
     assert [b["model"] for b in h.bodies()] == ["primary-model", "backup-1"]
 
 
-async def test_a_throttled_primary_falls_back_after_its_retries() -> None:
+async def test_a_throttled_primary_falls_back_to_the_next_model_at_once() -> None:
     def handler(r: httpx.Request) -> httpx.Response:
         model = json.loads(r.content)["model"]
         return httpx.Response(429) if model == "primary-model" else ok("ok from backup")
 
     h = Harness(handler, llm_fallback_models=["backup-1"])
     result = await h.model.complete(request())
-    assert result.model == "backup-1" and result.attempts == 4  # 3 on the primary + 1
-    assert [b["model"] for b in h.bodies()].count("primary-model") == 3
+    assert result.model == "backup-1" and result.attempts == 2 and h.sleeps == []
+    assert [b["model"] for b in h.bodies()] == ["primary-model", "backup-1"]
+
+
+async def test_a_rejected_key_stops_the_whole_chain() -> None:
+    h = Harness(lambda _r: httpx.Response(401), llm_fallback_models=["b1", "b2"])
+    with pytest.raises(ModelProviderError):
+        await h.model.complete(request())
+    assert len(h.requests) == 1  # the same key would fail for every model
+
+
+async def test_a_bad_request_downgrades_the_json_mode_once_and_remembers_it() -> None:
+    def handler(r: httpx.Request) -> httpx.Response:
+        body = json.loads(r.content)
+        fmt = body.get("response_format")
+        if fmt is not None and fmt["type"] == "json_schema":
+            return httpx.Response(400, text="response_format not supported")
+        return ok('{"answer": "ok"}')
+
+    h = Harness(handler, llm_json_mode="json_schema")
+    schema = {"type": "object"}
+    first = await h.model.complete(request(json_schema=schema))
+    assert first.text == '{"answer": "ok"}'
+    formats = [b.get("response_format", {}).get("type") for b in h.bodies()]
+    assert formats == ["json_schema", "json_object"] and h.sleeps == []
+    await h.model.complete(request(json_schema=schema))
+    assert [b.get("response_format", {}).get("type") for b in h.bodies()][-1] == "json_object"
+    assert len(h.requests) == 3  # the learned mode is used straight away next time
+
+
+async def test_a_persistent_bad_request_ends_with_the_plain_prompt_mode_then_the_next_model() -> (
+    None
+):
+    h = Harness(
+        lambda _r: httpx.Response(400, text="nope"),
+        llm_json_mode="json_schema",
+        llm_fallback_models=["b1"],
+    )
+    with pytest.raises(ModelProviderError):
+        await h.model.complete(request(json_schema={"type": "object"}))
+    seen = [(b["model"], b.get("response_format", {}).get("type")) for b in h.bodies()]
+    assert seen == [
+        ("primary-model", "json_schema"),
+        ("primary-model", "json_object"),
+        ("primary-model", None),
+        ("b1", "json_schema"),
+        ("b1", "json_object"),
+        ("b1", None),
+    ]
+
+
+async def test_the_total_budget_bounds_the_whole_call() -> None:
+    async def slow_failure(_r: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.06)
+        return httpx.Response(503)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(slow_failure))
+    model = OpenAICompatibleModel(
+        settings(llm_total_budget_s=0.05, llm_max_retries=5, llm_fallback_models=["b1", "b2"]),
+        client,
+    )
+    with pytest.raises(ModelTimeoutError):
+        await model.complete(request())
+
+
+async def test_waiting_for_a_free_slot_is_bounded() -> None:
+    gate = asyncio.Event()
+
+    async def blocked(_r: httpx.Request) -> httpx.Response:
+        await gate.wait()
+        return ok()
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(blocked))
+    model = OpenAICompatibleModel(settings(llm_max_concurrency=1, llm_queue_timeout_s=0.05), client)
+    first = asyncio.create_task(model.complete(request()))
+    await asyncio.sleep(0.02)
+    with pytest.raises(ModelRateLimitedError):  # the second caller gives up waiting
+        await model.complete(request())
+    gate.set()
+    assert (await first).text
 
 
 async def test_when_every_model_fails_the_last_failure_decides_the_error() -> None:

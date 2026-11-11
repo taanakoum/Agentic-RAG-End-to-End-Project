@@ -12,6 +12,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.config import Settings, get_settings
 from app.infra.container import Infrastructure
+from app.infra.rate_limit import subject_key
 from app.llm.base import ChatMessage, LLMRequest
 from app.llm.cache import (
     LLMGateway,
@@ -29,7 +30,7 @@ USER_A, USER_B = uuid.uuid4(), uuid.uuid4()
 
 @pytest.fixture(autouse=True)
 async def _clean_cache(infra: Infrastructure) -> None:
-    await delete_keys(infra.redis, "llm:*")
+    await delete_keys(infra.redis, "llmc:*")
 
 
 async def keys_matching(infra: Infrastructure, pattern: str) -> set[str]:
@@ -183,7 +184,9 @@ async def test_user_scoped_entries_are_never_shared_between_users(infra: Infrast
     await gw.remember(mine)
     other = await gw.complete(req(user_id=USER_B))  # identical prompt, different user
     assert other.cache == "miss" and len(model.calls) == 2
-    assert f"u:{USER_A}" in (mine.cache_key or "") and f"u:{USER_B}" in (other.cache_key or "")
+    assert f":u:{subject_key(str(USER_A))}:" in (mine.cache_key or "")
+    assert f":u:{subject_key(str(USER_B))}:" in (other.cache_key or "")
+    assert str(USER_A) not in (mine.cache_key or "")  # no raw user id in Redis keys
     assert (await gw.complete(req(user_id=USER_A))).cache == "hit"
 
 
@@ -196,7 +199,7 @@ async def test_only_context_free_prompts_can_be_shared_globally(infra: Infrastru
     again = await gw.complete(
         LLMRequest(messages=(ChatMessage("user", "hello"),), cache_scope="global", user_id=USER_B)
     )
-    assert again.cache == "hit" and (first.cache_key or "").startswith("llm:v1:g:")
+    assert again.cache == "hit" and (first.cache_key or "").startswith("llmc:v1:g:")
     assert len(model.calls) == 1
 
 
@@ -214,8 +217,8 @@ async def test_purging_a_user_removes_only_that_users_entries(infra: Infrastruct
     greeting = LLMRequest(messages=(ChatMessage("user", "hi"),), cache_scope="global")
     await gw.remember(await gw.complete(greeting))
     assert await purge_user_cache(infra.redis, USER_A) == 3
-    remaining = await keys_matching(infra, "llm:v1:*")
-    assert len(remaining) == 4 and not any(f"u:{USER_A}" in k for k in remaining)
+    remaining = await keys_matching(infra, "llmc:v1:*")
+    assert len(remaining) == 4 and not any(subject_key(str(USER_A)) in k for k in remaining)
     with infra.sync_session_factory():  # the sync purge used by the worker
         from app.infra.clients import create_sync_redis
 
@@ -252,7 +255,7 @@ async def test_the_cache_can_be_switched_off(infra: Infrastructure) -> None:
     first = await gw.complete(req())
     assert first.cache == "bypass" and await gw.remember(first) is False
     assert (await gw.complete(req())).cache == "bypass" and len(model.calls) == 2
-    assert not await keys_matching(infra, "llm:v1:*")
+    assert not await keys_matching(infra, "llmc:v1:*")
 
 
 async def test_a_redis_outage_is_a_miss_not_a_failed_chat(infra: Infrastructure) -> None:
@@ -301,7 +304,7 @@ async def test_an_unreadable_cache_entry_is_treated_as_a_miss(infra: Infrastruct
 
 async def test_hit_and_miss_counters_are_kept(infra: Infrastructure) -> None:
     gw = gateway(infra, ScriptedModel("x"))
-    await infra.redis.delete("llm:stats")
+    await infra.redis.delete("llmc:stats")
     miss = await gw.complete(req())
     await gw.remember(miss)
     await gw.complete(req())
@@ -318,3 +321,90 @@ async def test_concurrent_identical_requests_all_get_a_valid_answer(infra: Infra
     assert {r.text for r in results} == {"same answer"}
     await asyncio.gather(*(gw.remember(r) for r in results))
     assert (await gw.complete(req())).cache == "hit"
+
+
+async def test_a_broken_entry_is_deleted_and_a_failed_hit_can_be_discarded(
+    infra: Infrastructure,
+) -> None:
+    model = ScriptedModel("fresh")
+    gw = gateway(infra, model)
+    key = cache_key(req(), make_settings())
+    await infra.redis.set(key, "{broken", ex=60)
+    first = await gw.complete(req())
+    assert first.cache == "miss" and await infra.redis.exists(key) == 0  # dropped on read
+    await gw.remember(first)
+    hit = await gw.complete(req())
+    assert hit.cache == "hit" and await infra.redis.exists(key) == 1
+    await gw.discard(hit)  # the agent found the cached answer unusable (citation check failed)
+    assert await infra.redis.exists(key) == 0
+    assert (await gw.complete(req())).cache == "miss"
+    miss = await gw.complete(req("something else"))
+    await gw.discard(miss)  # only hits are discarded: a miss has no entry
+    assert miss.cache == "miss"
+
+
+async def test_a_slow_redis_is_a_miss_within_the_cache_timeout(infra: Infrastructure) -> None:
+    class SlowRedis:
+        async def get(self, *_a: Any, **_k: Any) -> Any:
+            await asyncio.sleep(2)
+
+        async def hincrby(self, *_a: Any, **_k: Any) -> Any:
+            await asyncio.sleep(2)
+
+    model = ScriptedModel("answer")
+    gw = LLMGateway(model, SlowRedis(), make_settings(llm_cache_timeout_s=0.05))  # pyright: ignore[reportArgumentType]
+    started = asyncio.get_running_loop().time()
+    response = await gw.complete(req())
+    assert response.text == "answer" and response.cache == "error"
+    assert asyncio.get_running_loop().time() - started < 1.0  # not the 2 s a slow Redis needs
+
+
+async def test_one_user_cannot_occupy_more_than_their_share_of_model_calls(
+    infra: Infrastructure,
+) -> None:
+    active = 0
+    peak = 0
+
+    async def slow(_request: Any) -> str:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        return "ok"
+
+    class SlowModel(ScriptedModel):
+        async def complete(self, request: Any) -> Any:
+            from app.llm.base import LLMResponse
+
+            return LLMResponse(text=await slow(request), model="m")
+
+    gw = gateway(infra, SlowModel("x"), llm_max_concurrency_per_user=2, llm_cache_enabled=False)
+    await asyncio.gather(*(gw.complete(req(f"q{i}", user_id=USER_A)) for i in range(8)))
+    assert peak == 2
+    other_peak_before = peak
+    # a second user is not blocked by the first one's queue
+    await asyncio.gather(
+        *(gw.complete(req(f"q{i}", user_id=USER_A)) for i in range(4)),
+        *(gw.complete(req(f"r{i}", user_id=USER_B)) for i in range(4)),
+    )
+    assert peak <= 4 and other_peak_before == 2
+
+
+async def test_waiting_for_a_per_user_slot_is_bounded(infra: Infrastructure) -> None:
+    from app.core.exceptions import ModelRateLimitedError
+
+    model = ScriptedModel("x")
+    model.delay_s = 0.3
+    gw = gateway(
+        infra,
+        model,
+        llm_max_concurrency_per_user=1,
+        llm_queue_timeout_s=0.05,
+        llm_cache_enabled=False,
+    )
+    first = asyncio.create_task(gw.complete(req("one")))
+    await asyncio.sleep(0.02)
+    with pytest.raises(ModelRateLimitedError):
+        await gw.complete(req("two"))
+    assert (await first).text == "x"
