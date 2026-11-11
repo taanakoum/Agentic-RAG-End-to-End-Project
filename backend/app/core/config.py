@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from cryptography.fernet import Fernet
-from pydantic import Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -204,6 +204,24 @@ class Settings(BaseSettings):
     memory_retention_sweep_interval_s: float = Field(default=3600.0, ge=10.0)
     rl_memory_write_limit: int = Field(default=120, ge=1)
     rl_memory_write_window_s: int = Field(default=3600, ge=1)
+    # LLM: ONE OpenAI-compatible provider; Gemini, OpenRouter (:free), Hugging Face and Groq are
+    # all just configuration (docs/DEPLOYMENT.md). Empty base URL / key = no model configured.
+    llm_base_url: str = ""
+    llm_api_key: SecretStr = SecretStr("")
+    llm_model: str = ""
+    llm_fallback_models: Annotated[list[str], NoDecode] = Field(default_factory=list[str])
+    llm_extra_headers: dict[str, str] = Field(default_factory=dict[str, str])
+    llm_json_mode: Literal["json_schema", "json_object", "prompt"] = "json_object"
+    llm_timeout_s: float = Field(default=60.0, gt=0)
+    llm_max_retries: int = Field(default=2, ge=0, le=6)
+    llm_retry_base_s: float = Field(default=1.0, ge=0.0)
+    llm_retry_max_s: float = Field(default=20.0, ge=0.0)
+    llm_max_concurrency: int = Field(default=4, ge=1, le=64)
+    llm_max_tokens: int = Field(default=1024, ge=16, le=32768)
+    llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    llm_cache_enabled: bool = True
+    llm_cache_ttl_s: int = Field(default=3600, ge=1)
+    llm_cache_max_bytes: int = Field(default=65536, ge=1024)
     rl_search_limit: int = Field(default=120, ge=1)
     rl_search_window_s: int = Field(default=60, ge=1)
     outbox_batch_size: int = Field(default=50, ge=1, le=500)
@@ -222,6 +240,14 @@ class Settings(BaseSettings):
     celery_task_soft_time_limit_s: int = Field(default=840, ge=5)
     celery_worker_concurrency: int = Field(default=2, ge=1, le=64)
     celery_health_timeout_s: float = Field(default=2.0, gt=0)
+
+    @field_validator("llm_fallback_models", mode="before")
+    @classmethod
+    def _split_models(cls, value: Any) -> Any:
+        """LLM_FALLBACK_MODELS=model-a,model-b (comma separated, order = preference)."""
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
 
     @model_validator(mode="after")
     def _validate(self) -> Settings:

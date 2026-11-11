@@ -13,6 +13,7 @@ import re
 import threading
 from collections import Counter
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from app.core.config import Settings
 from app.ingestion.embedding import SparseVec
@@ -107,3 +108,34 @@ class KeywordReranker:
                 score += 100.0
             out.append(score)
         return out
+
+
+class ScriptedModel:
+    """Deterministic stand-in for a hosted model. NEVER calls the network.
+
+    `script` is consumed one item per call: a string is returned as the model's text, an
+    Exception is raised, a callable receives the LLMRequest and returns either. When the script
+    is exhausted the last item repeats, so "always answer X" is a one-item script.
+    """
+
+    model_name = "scripted-model"
+
+    def __init__(self, *script: Any) -> None:
+        self.script: list[Any] = list(script)
+        self.calls: list[Any] = []
+        self.delay_s = 0.0
+
+    async def complete(self, request: Any) -> Any:
+        import asyncio
+
+        from app.llm.base import LLMResponse, Usage
+
+        self.calls.append(request)
+        if self.delay_s:
+            await asyncio.sleep(self.delay_s)
+        item = self.script[0] if len(self.script) == 1 else self.script.pop(0)
+        if callable(item):
+            item = item(request)
+        if isinstance(item, BaseException):
+            raise item
+        return LLMResponse(text=str(item), model=self.model_name, usage=Usage(10, 5))

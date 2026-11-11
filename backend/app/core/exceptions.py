@@ -178,6 +178,30 @@ class ModelProviderError(AppError):
     message = "The model provider returned an error."
 
 
+class ModelNotConfiguredError(AppError):
+    status_code = 503
+    code = "MODEL_NOT_CONFIGURED"
+    message = "No language model is configured for this deployment."
+
+
+class ModelRateLimitedError(AppError):
+    """The (free-tier) provider throttled us: tell the client when to come back."""
+
+    status_code = 429
+    code = "MODEL_RATE_LIMITED"
+    message = "The language model is busy. Please try again shortly."
+
+    def __init__(self, retry_after_s: int = 30) -> None:
+        super().__init__(headers={"Retry-After": str(max(1, retry_after_s))})
+        self.retry_after_s = max(1, retry_after_s)
+
+
+class ModelTimeoutError(AppError):
+    status_code = 504
+    code = "MODEL_TIMEOUT"
+    message = "The language model took too long to answer."
+
+
 class RateLimitExceededError(AppError):
     status_code = 429
     code = "RATE_LIMIT_EXCEEDED"
