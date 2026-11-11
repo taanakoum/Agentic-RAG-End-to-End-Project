@@ -233,6 +233,11 @@ class Settings(BaseSettings):
     rl_chat_window_s: int = Field(default=60, ge=1)
     llm_max_tokens: int = Field(default=1024, ge=16, le=32768)
     llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    # free-tier quota guard (docs/DEPLOYMENT.md "Calibrating daily usage"); 0 = unlimited
+    llm_daily_request_budget: int = Field(default=0, ge=0)
+    llm_requests_per_minute: int = Field(default=0, ge=0)
+    llm_quota_timezone: str = "America/Los_Angeles"
+    rl_chat_daily_limit: int = Field(default=0, ge=0)  # chat turns per user per 24 h, 0 = unlimited
     llm_cache_enabled: bool = True
     llm_cache_ttl_s: int = Field(default=3600, ge=1)
     llm_cache_timeout_s: float = Field(default=0.25, gt=0)

@@ -8,7 +8,7 @@ Condensed from three source documents: (1) Master Engineering Specification, (2)
 | 02-auth-security.md | Auth, isolation, security, prompt injection |
 | 03-ingestion.md | PDF validation, OCR, states, chunking, dedup, outbox, storage, deletion |
 | 04-retrieval.md | Dense/sparse/RRF/rerank, citations |
-| 05-agents-chat-memory.md | Single/multi agent, RAGResponse, SSE, sessions, checkpoints, concurrency, memory |
+| 05-agents-chat-memory.md | Single agent (multi-agent removed), RAGResponse, SSE, sessions, checkpoints, concurrency, memory |
 | 06-api-errors-frontend.md | Endpoints, error schema, Streamlit |
 | 07-testing-eval-ops.md | Tests, evaluation, observability, load, Docker, deployment |
 | 08-acceptance.md | Definition of done + final end-to-end scenario |

@@ -3,7 +3,7 @@
 You are the autonomous engineer building this project. Read this file fully at the start of every session.
 
 ## Mission
-Build a production-grade, async, multi-user Agentic RAG platform (single-agent + multi-agent LangGraph modes) with FastAPI, PostgreSQL, Qdrant, Redis/Celery, Streamlit, Docker. Correctness, security, persistence and measurable RAG quality matter more than feature count.
+Build a production-grade, async, multi-user Agentic RAG platform (single-agent LangGraph; multi-agent was removed by the user on 2026-11-11) with FastAPI, PostgreSQL, Qdrant, Redis/Celery, Streamlit, Docker. Correctness, security, persistence and measurable RAG quality matter more than feature count.
 
 Authoritative requirements live in `docs/spec/` (start with `docs/spec/README.md`). Do not re-derive requirements from memory; read the relevant spec file before each phase.
 

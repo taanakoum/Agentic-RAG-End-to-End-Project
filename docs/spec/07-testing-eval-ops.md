@@ -15,7 +15,7 @@ Retrieval: Recall@K, Precision@K, HitRate@K, MRR, NDCG for dense / sparse / hybr
 Generation: correctness, faithfulness, context relevance/precision/recall, citation precision/correctness, completeness, hallucination rate. LLM-as-judge used cautiously plus deterministic checks and human-labelled data.
 Agent: retrieval-necessity classification, tool selection, routing, termination, structured-output validity, evidence selection, collaboration, failure recovery.
 Performance: end-to-end/retrieval/fusion/rerank/LLM latency, tokens, cost, throughput, error rate.
-Configurations: Baseline (dense, no rerank, single); Hybrid (dense+sparse, single); Reranked (single); Multi-agent (hybrid+rerank, multi); Advanced (best evaluated). Record model versions, dataset version, retrieval params. Generate reproducible reports in `evaluation/reports/`. Decide chunking by evaluation.
+Configurations: Baseline (dense, no rerank, single); Hybrid (dense+sparse, single); Reranked (single); ~~Multi-agent~~ (removed, single agent only); Advanced (best evaluated). Record model versions, dataset version, retrieval params. Generate reproducible reports in `evaluation/reports/`. Decide chunking by evaluation.
 
 ## Observability
 OpenTelemetry + Langfuse/Phoenix (verify compatibility). Trace API requests, graph/node execution, routing, retrieval + scores, fusion, rerank, LLM calls, tokens, cost, latency, errors, Celery jobs, DB. Structured logs with correlation/request IDs propagated Streamlit -> FastAPI -> LangGraph -> PG/Qdrant/Redis -> Celery -> providers. Health checks for API, PG, Redis, Qdrant, Celery workers, storage, optionally provider. Redaction + retention. Must be able to trace a failed upload or failed RAG request across services without exposing private data.

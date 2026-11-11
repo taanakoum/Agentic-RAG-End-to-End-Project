@@ -19,7 +19,7 @@ Not done because it launches. Each row needs verification evidence in EXECUTION_
 | Hybrid | Dense + sparse + fusion |
 | Rerank | Functional cross-encoder |
 | Single-agent | Complete workflow |
-| Multi-agent | Complete bounded workflow |
+| Multi-agent | n/a: removed by user decision (single agent only) |
 | Output | Pydantic-validated RAGResponse |
 | Citations | Server-verified against authorized evidence |
 | Streaming | Functional typed SSE |

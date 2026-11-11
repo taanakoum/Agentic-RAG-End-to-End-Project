@@ -6,7 +6,7 @@ Authoritative requirements: `docs/spec/01-architecture.md`. This file is the wor
 ```
 Streamlit ──HTTP/SSE──> FastAPI (/api/v1) ──> services ──> repositories ──> PostgreSQL (source of truth)
                            │                      │
-                           │                      ├──> LangGraph (single / multi agent) ──> Qdrant (dense+sparse, RRF) ──> reranker ──> LLM
+                           │                      ├──> LangGraph (single agent) ──> Qdrant (dense+sparse, RRF) ──> reranker ──> LLM
                            │                      │         └── Postgres checkpointer
                            │                      └──> object storage (local volume / S3-compatible)
                            └── upload ──> PG (document + job + outbox, one transaction)

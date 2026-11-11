@@ -35,6 +35,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.llm.base import LLMRequest, LLMResponse, Usage
+from app.llm.budget import QuotaGuard
 
 log = get_logger(__name__)
 
@@ -69,8 +70,10 @@ class OpenAICompatibleModel:
         client: httpx.AsyncClient | None = None,
         *,
         sleep: Any = asyncio.sleep,
+        quota: QuotaGuard | None = None,
     ) -> None:
         self._settings = settings
+        self._quota = quota
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(settings.llm_timeout_s, connect=10.0)
@@ -174,6 +177,11 @@ class OpenAICompatibleModel:
         return delay
 
     async def _guarded_attempt(self, request: LLMRequest, model: str) -> tuple[str, Usage]:
+        if self._quota is not None:
+            decision = await self._quota.reserve(model)
+            if not decision.allowed:
+                log.info("llm_quota_refused", model=model, reason=decision.reason)
+                raise _Failure("rate_limited", float(decision.retry_after_s))
         try:
             async with asyncio.timeout(self._settings.llm_queue_timeout_s):
                 await self._sem.acquire()

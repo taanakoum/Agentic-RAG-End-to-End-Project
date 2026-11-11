@@ -4,7 +4,7 @@
 LangGraph with explicit typed state, nodes, transitions, termination. Nodes: input validation -> query classification -> retrieval-necessity -> rewrite/expand (when useful) -> hybrid retrieval -> rerank -> context construction -> evidence analysis -> grounded generation -> citation verification -> Pydantic validation -> persistence.
 Routes: general chat (no retrieval), KB question, tool use, clarification, insufficient evidence. No uncontrolled loops; each node has defined inputs/outputs/failure behavior. Never make unsupported claims when evidence is missing.
 
-## Multi-agent (only after single-agent is VERIFIED)
+## Multi-agent (REMOVED by user decision (2026-11-11): this application uses the single-agent graph only. Kept only as history.)
 Supervisor-based LangGraph. Roles (adjust only if simpler is demonstrably better): Supervisor/Planner, Retrieval, Research/Analysis, Answer Synthesis, Critic/Verification. Explicit communication contracts, typed Pydantic state/outputs, max iterations, timeouts, bounded retries, no infinite delegation, no redundant LLM calls, per-agent cost tracking, user authorization preserved across all transitions/tool calls. Same final `RAGResponse`. Benchmark vs single-agent; justify extra latency/cost/complexity with measurements, do not assume it is better.
 
 ## RAGResponse (versioned; improve as needed)

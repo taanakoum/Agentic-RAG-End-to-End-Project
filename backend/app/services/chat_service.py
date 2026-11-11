@@ -138,6 +138,10 @@ class ChatService:
         await infra.rate_limiter.hit(
             "chat", subject_key(str(user.id)), limit=s.rl_chat_limit, window_s=s.rl_chat_window_s
         )
+        if s.rl_chat_daily_limit:  # one user cannot spend the shared free-tier quota alone
+            await infra.rate_limiter.hit(
+                "chat_day", subject_key(str(user.id)), limit=s.rl_chat_daily_limit, window_s=86400
+            )
         if classify(message).route == "kb" and not infra.llm.configured:
             raise ModelNotConfiguredError()  # refused up front: nothing is stored for it
         async with infra.session_factory() as session:

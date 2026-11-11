@@ -23,6 +23,6 @@ Gate-specific minimums:
 - G3 the 13 ingestion scenarios, outbox recovery, deletion across PG/Qdrant/storage.
 - G4 Recall/Precision/MRR/NDCG for dense, sparse, hybrid, reranked on a documented dataset + manual inspection.
 - G5 restart persistence, same-thread conflict behavior, memory deletion removes vector, isolation.
-- G6/G7 real E2E with mock LLM only; citations verified; schema valid; streaming order; single vs multi comparison.
+- G6 real E2E (scripted LLM in tests, plus a live free model run); citations verified; schema valid; streaming order. G7 (multi-agent) was removed by the user.
 - G8 frontend-to-backend flows, session expiry, error presentation.
 - G9 full suites + security tests. G10 concurrency + load numbers with hardware noted. G11 clean Docker + persistence. G12 docs, final report, AUDIT_REPORT.md.

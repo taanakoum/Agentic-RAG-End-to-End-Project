@@ -4,7 +4,7 @@
 The model only ever sees short source labels (S1, S2, ...), never chunk ids or document ids, and
 it never supplies document names or excerpts that are trusted: the server builds every
 `Citation` from stored data after verifying the source (see agents/citations.py). Both contracts
-reject unknown fields. `RAGResponse` is versioned and identical for single/multi agent and for
+reject unknown fields. `RAGResponse` is versioned and identical for streaming and
 streaming and non-streaming delivery.
 """
 
@@ -53,7 +53,7 @@ class Citation(BaseModel):
 class AgentMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    execution_mode: Literal["single", "multi"]
+    execution_mode: Literal["single"]
     model_name: str
     retrieval_used: bool
     reranking_used: bool

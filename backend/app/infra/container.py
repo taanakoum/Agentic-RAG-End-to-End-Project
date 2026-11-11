@@ -27,6 +27,7 @@ from app.infra.clients import create_async_qdrant, create_async_redis
 from app.infra.email import EmailSender, create_email_sender
 from app.infra.rate_limit import RateLimiter
 from app.ingestion.parsing import SandboxedPdfParser
+from app.llm.budget import QuotaGuard
 from app.llm.cache import LLMGateway
 from app.llm.openai_compat import OpenAICompatibleModel
 from app.storage.base import ObjectStorage
@@ -52,12 +53,14 @@ class Infrastructure:
     checkpointer: CheckpointerProvider
     llm: LLMGateway
     llm_model: OpenAICompatibleModel
+    llm_quota: QuotaGuard
 
     @classmethod
     def create(cls, settings: Settings) -> Infrastructure:
         engine = create_async_db_engine(settings)
         redis = create_async_redis(settings)
-        llm_model = OpenAICompatibleModel(settings)
+        llm_quota = QuotaGuard(redis, settings)
+        llm_model = OpenAICompatibleModel(settings, quota=llm_quota)
         sync_engine = create_sync_db_engine(settings)
         return cls(
             settings=settings,
@@ -78,6 +81,7 @@ class Infrastructure:
             checkpointer=CheckpointerProvider(settings),
             llm=LLMGateway(llm_model, redis, settings),
             llm_model=llm_model,
+            llm_quota=llm_quota,
             inference_executor=ThreadPoolExecutor(
                 max_workers=settings.inference_threads, thread_name_prefix="inference"
             ),

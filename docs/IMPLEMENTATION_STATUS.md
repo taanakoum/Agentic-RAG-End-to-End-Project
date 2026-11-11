@@ -17,7 +17,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | 4 Retrieval | G4 | VERIFIED (native) | Log entry 9; ADR-022 |
 | 5 Sessions + Memory | G5 | VERIFIED (native) | Log entry 10; ADR-023..025 |
 | 6 Single-agent | G6 | VERIFIED (scripted-model suite + live Gemini free tier) | Log entries 11, 12; ADR-026/027 |
-| 7 Multi-agent | G7 | NOT_STARTED | |
+| 7 Multi-agent | G7 | REMOVED (user decision 2026-11-11; single agent only) | ADR-028 |
 | 8 Eval + Observability | - | NOT_STARTED | |
 | 9 Frontend | G8 | NOT_STARTED | |
 | 10 Test + Harden | G9 | NOT_STARTED | |
@@ -45,7 +45,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | Hybrid dense+sparse+RRF | VERIFIED (tests + evaluation) | Log entry 9 |
 | Cross-encoder rerank | VERIFIED (tests + evaluation; CPU cost KI-023) | Log entry 9 |
 | Single-agent RAG | VERIFIED (real free model: 0 errors, 100% correct refusals, 94% gold citations) | Log entries 11, 12 |
-| Multi-agent RAG | NOT_STARTED | |
+| Multi-agent RAG | REMOVED (user decision) | ADR-028 |
 | RAGResponse validation | VERIFIED (contracts, bounded repair, safe fallback) | Log entry 11 |
 | Citation verification | VERIFIED (server-side, attack tests, mutation-checked) | Log entry 11 |
 | SSE streaming | VERIFIED (order, replay, errors, disconnect on a real socket, keep-alive) | Log entry 11 |

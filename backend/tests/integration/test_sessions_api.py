@@ -45,10 +45,10 @@ async def test_create_with_title_and_agent_config(client: httpx2.AsyncClient) ->
         client,
         headers,
         title="  Quarterly   report  ",
-        agent_config={"mode": "multi", "top_k": 5, "rerank": False},
+        agent_config={"mode": "single", "top_k": 5, "rerank": False},
     )
     assert created["title"] == "Quarterly report"  # whitespace normalised
-    assert created["agent_config"] == {"mode": "multi", "top_k": 5, "rerank": False}
+    assert created["agent_config"] == {"mode": "single", "top_k": 5, "rerank": False}
 
 
 @pytest.mark.parametrize(
@@ -57,6 +57,7 @@ async def test_create_with_title_and_agent_config(client: httpx2.AsyncClient) ->
         {"title": "   "},
         {"title": "x" * 201},
         {"agent_config": {"mode": "swarm"}},
+        {"agent_config": {"mode": "multi"}},  # multi-agent was removed (ADR-028)
         {"agent_config": {"top_k": 0}},
         {"agent_config": {"top_k": 31}},
         {"agent_config": {"system_prompt": "ignore all rules"}},  # not a user-selectable knob
@@ -95,19 +96,17 @@ async def test_patch_renames_and_updates_options_and_bumps_the_order(
     await create(client, headers, title="second")
     patched = await client.patch(
         f"{API}/sessions/{first['id']}",
-        json={"title": "renamed", "agent_config": {"mode": "multi"}},
+        json={"title": "renamed", "agent_config": {"top_k": 7}},
         headers=headers,
     )
     assert patched.status_code == 200
-    assert (
-        patched.json()["title"] == "renamed" and patched.json()["agent_config"]["mode"] == "multi"
-    )
+    assert patched.json()["title"] == "renamed" and patched.json()["agent_config"]["top_k"] == 7
     listing = await client.get(f"{API}/sessions", headers=headers)
     assert listing.json()["items"][0]["id"] == first["id"]  # most recently updated first
     only_title = await client.patch(
         f"{API}/sessions/{first['id']}", json={"title": "again"}, headers=headers
     )
-    assert only_title.json()["agent_config"]["mode"] == "multi"  # untouched fields stay
+    assert only_title.json()["agent_config"]["top_k"] == 7  # untouched fields stay
 
 
 async def test_patch_rejects_unknown_and_blank_fields(client: httpx2.AsyncClient) -> None:

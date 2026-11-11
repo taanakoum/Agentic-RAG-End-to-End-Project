@@ -14,7 +14,7 @@ class AgentConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["single", "multi"] = "single"
+    mode: Literal["single"] = "single"  # multi-agent was removed (ADR-028)
     top_k: int | None = Field(default=None, ge=1, le=30)
     rerank: bool | None = None
 
