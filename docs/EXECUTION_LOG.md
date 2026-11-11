@@ -176,3 +176,17 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Gate G6 (docs/spec/09) "Full real workflow (auth -> upload -> index -> session -> question -> cited, validated, streamed, persisted, reopened)": done end to end in `test_chat_e2e.py` with the real worker, PostgreSQL, Redis, Qdrant, HTTP stack, LangGraph checkpoints; the LANGUAGE MODEL is scripted. Not claimed: answer quality with a real model (KI-030).
 - Not done / blocked: real free-model verification and the generation evaluation (need the user's free API key); multi-agent (Phase 7, KI-033); Docker (KI-014).
 - Usage: could not be measured.
+
+---
+## Entry 12: Phase 6 verified against a live free hosted model (Gemini); Gate G6 VERIFIED
+- Date: 2026-11-11. The user supplied a Gemini free-tier API key. It was passed ONLY through environment variables on the command line of each run (never written to a file, `.env`, memory or git; a scan of the repository, git history and memory notes found no trace). Advice to the user: rotate the key, since it was pasted into a chat.
+- Commands and ACTUAL results:
+  - `pytest backend/tests/integration/test_chat_e2e.py -m real_llm` (upload -> real worker -> session -> streamed question through the real HTTP stack) -> passed with `gemini-2.5-flash` and with `gemini-3.5-flash-lite`: route kb, answer_support supported, llm_calls 1, citations verified, no degradation.
+  - `python evaluation/generation/run_eval.py --delay 6` with `gemini-2.5-flash`: the first 22 questions answered with 100% JSON-first-try and 100% gold-chunk citations; the remaining 24 got `MODEL_RATE_LIMITED` (daily free quota exhausted). Not usable as a full result; kept as a finding (KI-035).
+  - Model probe (raw HTTP): `gemini-2.5-flash` 429 quota; `gemini-2.5-flash-lite`, `gemini-2.0-flash`, `gemini-2.0-flash-lite` 404 retired; `gemini-3.8-flash`, `gemini-flash-latest` 503; `gemini-3.5-flash-lite` and `gemini-flash-lite-latest` 200; `gemini-3.5-flash` 200 but empty content at `max_tokens=20` (hidden thinking).
+  - `python evaluation/generation/run_eval.py --delay 5` with `gemini-3.5-flash-lite` (evaluation/reports/generation_eval.md): 46 questions, 0 provider errors; valid JSON without repair 0.94 of answerable (36); repaired 0; fallback 0; gold chunk cited 0.94; answer contains the key facts 0.93 (token overlap proxy); refusal accuracy 1.00 on the 10 unanswerable questions (every refusal says the documents do not contain the information, nothing invented); latency p50 3.5 s / p95 6.9 s including retrieval + rerank; 1 model call per question.
+  - The 2 answerable questions that were not answered ("How often are admin permissions reviewed?", "How many results does the list endpoint return?") are the retrieval misses already documented in ADR-022 (the relevant chunk is not in the 5 reranked candidates), reported by the model as insufficient evidence rather than guessed.
+- Gate G6: single-agent RAG verified end to end with a real free model; the scripted-model suite (959 passed) remains the regression net.
+- Findings: free-tier volatility (KI-035); `LLM_MAX_TOKENS` must be larger for thinking models; the cache could not show hits in the evaluation because it was disabled to measure the model (KI-031 stays open).
+- Not done: multi-agent (Phase 7); Docker (KI-014).
+- Usage: could not be measured.

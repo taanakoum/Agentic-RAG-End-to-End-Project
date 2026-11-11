@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 6 (Single-agent): IMPLEMENTED and TESTED with a scripted model; real-model verification (KI-030) needs the user's free API key. Phases 2, 3, 4 and 5 VERIFIED (native). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
-**Next step:** (a) User installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1` to verify G1. (b) Provide a free LLM key (docs/DEPLOYMENT.md) and run `pytest -m real_llm` + `evaluation/generation/run_eval.py` to finish G6; then Phase 7 (multi-agent supervisor graph, benchmark against single-agent). Start services first (`scripts/dev_services.ps1 start`).
+**Current phase:** 7 (Multi-agent). Phases 2, 3, 4, 5 and 6 VERIFIED (native; Phase 6 also against a live free Gemini model). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
+**Next step:** (a) User installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1` to verify G1. (b) Phase 7: read docs/spec/05-agents-chat-memory.md (supervisor graph, roles, limits, per-agent cost tracking, same RAGResponse) and benchmark single vs multi with evaluation/generation/run_eval.py (free-tier quota is per model: use LLM_FALLBACK_MODELS, KI-035). Start services first (`scripts/dev_services.ps1 start`).
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -16,7 +16,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | 3 Ingestion | G3 | VERIFIED (native; container-restart scenario pending Docker, KI-019) | Log entry 7 |
 | 4 Retrieval | G4 | VERIFIED (native) | Log entry 9; ADR-022 |
 | 5 Sessions + Memory | G5 | VERIFIED (native) | Log entry 10; ADR-023..025 |
-| 6 Single-agent | G6 | TESTED (scripted model, real services); real free-model check pending KI-030 | Log entry 11; ADR-026/027 |
+| 6 Single-agent | G6 | VERIFIED (scripted-model suite + live Gemini free tier) | Log entries 11, 12; ADR-026/027 |
 | 7 Multi-agent | G7 | NOT_STARTED | |
 | 8 Eval + Observability | - | NOT_STARTED | |
 | 9 Frontend | G8 | NOT_STARTED | |
@@ -44,7 +44,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | Qdrant indexing/retrieval | VERIFIED (indexing + authorized hybrid search) | Log entries 7, 9 |
 | Hybrid dense+sparse+RRF | VERIFIED (tests + evaluation) | Log entry 9 |
 | Cross-encoder rerank | VERIFIED (tests + evaluation; CPU cost KI-023) | Log entry 9 |
-| Single-agent RAG | TESTED (scripted model); real-model run pending | Log entry 11 |
+| Single-agent RAG | VERIFIED (real free model: 0 errors, 100% correct refusals, 94% gold citations) | Log entries 11, 12 |
 | Multi-agent RAG | NOT_STARTED | |
 | RAGResponse validation | VERIFIED (contracts, bounded repair, safe fallback) | Log entry 11 |
 | Citation verification | VERIFIED (server-side, attack tests, mutation-checked) | Log entry 11 |

@@ -53,7 +53,7 @@ Run tests with `export UV_PROJECT_ENVIRONMENT=C:/Users/ali_a/devtools/venv` then
 The platform talks to ONE OpenAI-compatible endpoint, so any of these free options is configuration only. Nothing has been created for you and no account was opened; names and free-tier limits change, so confirm on the provider's site.
 | Provider | `LLM_BASE_URL` | Example `LLM_MODEL` | Notes |
 |---|---|---|---|
-| Google Gemini (AI Studio key) | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-2.5-flash` | free tier with rate limits; check the data-use terms |
+| Google Gemini (AI Studio key) | `https://generativelanguage.googleapis.com/v1beta/openai/` | `gemini-3.5-flash-lite` (VERIFIED 2026-11-11) | free tier with a daily cap per model; older names (`gemini-2.5-flash-lite`, `gemini-2.0-*`) were retired for new keys; check the data-use terms |
 | OpenRouter | `https://openrouter.ai/api/v1` | a model ending in `:free` | set `LLM_EXTRA_HEADERS={"HTTP-Referer":"http://localhost","X-Title":"agentic-rag"}` if required |
 | Groq | `https://api.groq.com/openai/v1` | e.g. `llama-3.3-70b-versatile` | very fast, strict free limits |
 | Hugging Face Inference Providers | `https://router.huggingface.co/v1` | a model id from the router catalogue | uses your HF token as the key |
@@ -65,3 +65,5 @@ uv run --no-sync pytest backend/tests/integration/test_chat_e2e.py -m real_llm -
 $env:PYTHONPATH="backend;."; uv run --no-sync python evaluation/generation/run_eval.py --delay 4
 ```
 The second command writes `evaluation/reports/generation_eval.md` (JSON validity, repair/fallback rates, citation validity against the gold chunk, refusal accuracy, latency, 429 count).
+
+Verified against a live provider (2026-11-11, Gemini free tier, key supplied by the user and used only via environment variables): `pytest -m real_llm` passed with `gemini-2.5-flash` and `gemini-3.5-flash-lite`; `evaluation/generation/run_eval.py` on `gemini-3.5-flash-lite` gave 0 provider errors over 46 questions (see `evaluation/reports/generation_eval.md`). Rotate any key that was ever pasted into a chat or terminal log.
