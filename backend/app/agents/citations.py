@@ -23,6 +23,8 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.agents.schemas import Citation, DraftAnswer
 from app.ingestion.chunking import split_sentences
 from app.ingestion.indexing import point_id
@@ -184,3 +186,18 @@ def _renumber(answer: str, verified: Sequence[str]) -> tuple[str, list[str]]:
         return f" [{number[label]}]" if label in number else ""
 
     return _MARKER.sub(replace, answer).strip(), order
+
+
+async def verify_for_user(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    draft: DraftAnswer,
+    evidence: Mapping[str, EvidenceItem],
+) -> VerificationResult:
+    """Ask PostgreSQL which of the cited documents the user may still read, then verify."""
+    from app.repositories.documents import DocumentRepository
+
+    readable = await DocumentRepository(session).readable(
+        user_id, [item.document_id for item in evidence.values()]
+    )
+    return verify_draft(draft, evidence, readable)

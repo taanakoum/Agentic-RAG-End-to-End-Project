@@ -156,6 +156,33 @@ class ConversationRepository:
         )
         return list(reversed(rows))
 
+    async def recent_exchanges(
+        self, user_id: uuid.UUID, conversation_id: uuid.UUID, *, limit: int
+    ) -> list[Message]:
+        """The last `limit` messages that belong to COMPLETED turns, oldest first.
+
+        A running, failed or cancelled turn leaves only its user message behind; it must not
+        become context for the next answer.
+        """
+        rows = (
+            (
+                await self._session.execute(
+                    select(Message)
+                    .join(ChatExecution, Message.execution_id == ChatExecution.id)
+                    .where(
+                        Message.conversation_id == conversation_id,
+                        Message.user_id == user_id,
+                        ChatExecution.status == "completed",
+                    )
+                    .order_by(Message.seq.desc())
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(reversed(rows))
+
     # ------------------------------------------------------------------ executions
 
     async def get_execution_by_key(

@@ -277,7 +277,18 @@ class ChatTurnService:
                 )
             )
 
-    async def fail(self, user_id: uuid.UUID, execution_id: uuid.UUID, *, error_code: str) -> bool:
+    async def cancel(self, user_id: uuid.UUID, execution_id: uuid.UUID, *, error_code: str) -> bool:
+        """The client went away: a running execution becomes `cancelled` (conversation freed)."""
+        return await self.fail(user_id, execution_id, error_code=error_code, status="cancelled")
+
+    async def fail(
+        self,
+        user_id: uuid.UUID,
+        execution_id: uuid.UUID,
+        *,
+        error_code: str,
+        status: str = "failed",
+    ) -> bool:
         """Mark a running execution failed. Returns False if it was not running (already final)."""
         execution = await self._repo.get_execution_owned(user_id, execution_id)
         if execution is None:
@@ -286,7 +297,7 @@ class ChatTurnService:
         result = await self._session.execute(
             update(ChatExecution)
             .where(ChatExecution.id == execution_id, ChatExecution.status == "running")
-            .values(status="failed", error_code=error_code[:64], finished_at=self._clock())
+            .values(status=status, error_code=error_code[:64], finished_at=self._clock())
         )
         await self._session.commit()
         return bool(getattr(result, "rowcount", 0))

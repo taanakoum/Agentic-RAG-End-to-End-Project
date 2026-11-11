@@ -178,6 +178,20 @@ class ModelProviderError(AppError):
     message = "The model provider returned an error."
 
 
+class TurnFailedError(AppError):
+    """Replaying the idempotency key of a turn that failed or was cancelled."""
+
+    status_code = 409
+    code = "TURN_FAILED"
+    message = "This message could not be answered. Send it again with a new idempotency key."
+
+
+class PersistenceError(AppError):
+    status_code = 503
+    code = "PERSISTENCE_FAILED"
+    message = "The answer could not be saved, so it was not delivered. Please try again."
+
+
 class ModelNotConfiguredError(AppError):
     status_code = 503
     code = "MODEL_NOT_CONFIGURED"

@@ -52,6 +52,8 @@ class RetrievalResult:
     # soft failures that were handled, e.g. "sparse_unavailable", "rerank_timeout"
     degraded: list[str] = field(default_factory=list[str])
     candidates: dict[str, int] = field(default_factory=dict[str, int])
+    # how many completed documents the user can search (0 = nothing uploaded or processed yet)
+    readable_documents: int = 0
 
     @property
     def evidence_chunk_ids(self) -> frozenset[str]:

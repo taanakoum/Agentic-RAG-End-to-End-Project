@@ -110,6 +110,7 @@ class RetrievalService:
             mode=mode or self.default_mode(),
             top_k=k,
         )
+        result.readable_documents = len(readable)
         if not result.chunks:
             return result
         # Re-verify against the database: deleted, re-indexed or foreign documents are dropped.

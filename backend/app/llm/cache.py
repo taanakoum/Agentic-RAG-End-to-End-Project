@@ -119,6 +119,10 @@ class LLMGateway:
     def model_name(self) -> str:
         return self._model.model_name
 
+    @property
+    def configured(self) -> bool:
+        return bool(getattr(self._model, "configured", True))
+
     async def _call_model(self, request: LLMRequest) -> LLMResponse:
         async with self._slots.slot(request.user_id, self._settings.llm_queue_timeout_s):
             return await self._model.complete(request)

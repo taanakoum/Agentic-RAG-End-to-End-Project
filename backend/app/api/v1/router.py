@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.routers import (
     account,
     auth,
+    chat,
     documents,
     health,
     ingestion,
@@ -26,3 +27,4 @@ api_router.include_router(search.router)
 api_router.include_router(sessions.router)
 api_router.include_router(memory.router)
 api_router.include_router(users.router)
+api_router.include_router(chat.router)

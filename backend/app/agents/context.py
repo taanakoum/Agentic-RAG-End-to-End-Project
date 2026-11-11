@@ -17,6 +17,8 @@ Rules enforced here:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
 import secrets
@@ -65,6 +67,19 @@ def system_rules() -> str:
 
 def new_nonce() -> str:
     return secrets.token_hex(6)
+
+
+def derive_nonce(secret: str, *parts: str) -> str:
+    """A keyed, unguessable nonce that is STABLE for an identical prompt.
+
+    Document text cannot forge a closing tag without knowing the server secret, yet identical
+    questions over identical sources produce byte-identical prompts, which is what lets the Redis
+    LLM cache work (a fresh random nonce per request would make every prompt unique).
+    """
+    mac = hmac.new(
+        f"prompt-nonce:{secret}".encode(), chr(0x1F).join(parts).encode(), hashlib.sha256
+    )
+    return mac.hexdigest()[:12]
 
 
 def sanitize_name(name: str, *, limit: int = 80) -> str:

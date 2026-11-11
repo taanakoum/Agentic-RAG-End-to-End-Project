@@ -6,9 +6,7 @@ verification cannot produce a trustworthy cited answer.
 
 from __future__ import annotations
 
-from app.agents.routing import SmalltalkKind
-
-SMALLTALK: dict[SmalltalkKind, str] = {
+SMALLTALK: dict[str, str] = {  # keys are SmalltalkKind values
     "greeting": (
         "Hello! Ask me a question about your uploaded documents and I will answer from them, "
         "with citations."
