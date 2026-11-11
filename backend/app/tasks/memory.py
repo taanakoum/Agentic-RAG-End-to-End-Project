@@ -19,6 +19,7 @@ from app.memory.pipeline import (
 )
 from app.tasks.celery_app import celery_app
 from app.tasks.ingestion import backoff_seconds
+from app.tasks.tracing import task_span
 
 log = get_logger(__name__)
 
@@ -75,9 +76,10 @@ def purge_user_memories_task(self: Task[Any, Any], user_id: str) -> str:
 )
 def consolidate_conversation_task(self: Task[Any, Any], conversation_id: str, user_id: str) -> str:
     try:
-        result = consolidate_conversation(
-            get_runtime(), uuid.UUID(conversation_id), uuid.UUID(user_id)
-        )
+        with task_span(self, "task.consolidate_conversation"):
+            result = consolidate_conversation(
+                get_runtime(), uuid.UUID(conversation_id), uuid.UUID(user_id)
+            )
         _publish_now()
         return result
     except Exception as exc:

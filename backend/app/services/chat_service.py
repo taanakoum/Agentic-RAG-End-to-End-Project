@@ -40,6 +40,7 @@ from app.core.exceptions import (
     TurnFailedError,
 )
 from app.core.logging import get_logger
+from app.core.telemetry import hashed_user, instruments, span, timed
 from app.infra.container import Infrastructure
 from app.infra.rate_limit import subject_key
 from app.repositories.conversations import ConversationRepository
@@ -255,6 +256,40 @@ class ChatService:
                 log.warning("lease_renewal_failed", error=type(exc).__name__)
 
     async def execute(self, plan: TurnPlan, *, status: Any = None) -> TurnOutcome:
+        """Run one turn inside a `chat.turn` span (ids and counts only, never text)."""
+        meter = instruments()
+        with (
+            span(
+                "chat.turn",
+                **{
+                    "app.user": hashed_user(plan.user.id),
+                    "chat.execution_id": str(plan.handle.execution_id),
+                    "chat.session_id": str(plan.handle.conversation_id),
+                },
+            ) as current,
+            timed() as took,
+        ):
+            try:
+                outcome = await self._execute(plan, status=status)
+            except BaseException as exc:
+                code = getattr(exc, "code", type(exc).__name__)
+                current.set_attribute("chat.outcome", str(code))
+                meter.chat_turns.add(1, {"outcome": str(code)})
+                raise
+            meta = outcome.response.metadata
+            current.set_attribute("chat.outcome", "completed")
+            current.set_attribute("chat.route", meta.route)
+            current.set_attribute("chat.llm_calls", meta.llm_calls)
+            current.set_attribute("chat.cache", meta.cache_status)
+            current.set_attribute("chat.degraded", list(meta.degraded))
+            current.set_attribute(
+                "chat.insufficient_evidence", outcome.response.insufficient_evidence
+            )
+        meter.chat_turns.add(1, {"outcome": "completed", "route": meta.route})
+        meter.chat_latency.record(took[0], {"route": meta.route})
+        return outcome
+
+    async def _execute(self, plan: TurnPlan, *, status: Any = None) -> TurnOutcome:
         infra = self._infra
         lease = _Lease(main=asyncio.current_task())
         lease.task = asyncio.create_task(self._renew(plan, lease))

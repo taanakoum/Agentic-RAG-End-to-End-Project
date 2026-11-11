@@ -60,6 +60,9 @@ class AgentMetadata(BaseModel):
     answer_support: AnswerSupport = "none"
     cache_status: Literal["hit", "miss", "bypass", "error", "none"] = "none"
     llm_calls: int = 0
+    prompt_tokens: int = 0  # tokens actually spent (a cache hit spends none)
+    completion_tokens: int = 0
+    latency_ms: int = 0  # until the answer was ready (before saving)
     degraded: list[str] = Field(default_factory=list[str])
     route: str = ""
 

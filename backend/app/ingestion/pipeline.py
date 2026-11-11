@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from app.core.logging import get_logger
+from app.core.telemetry import instruments, span, timed
 from app.ingestion.chunking import Chunk
 from app.ingestion.embedding import SparseVec
 from app.ingestion.indexing import (
@@ -112,13 +113,22 @@ def _process(rt: WorkerRuntime, store: IngestionStore, claim: JobClaim) -> str:
             "STORAGE_INTEGRITY", "The stored file does not match its recorded checksum."
         )
     try:
-        parsed = parse_bytes(
-            rt.parser,
-            data,
-            title=Path(filename).stem or "document",
-            page_count=doc.page_count or 1,
-            source_format=doc.source_format,
-        )
+        with (
+            span("ingestion.parse", **{"ingestion.format": doc.source_format}) as stage,
+            timed() as took,
+        ):
+            parsed = parse_bytes(
+                rt.parser,
+                data,
+                title=Path(filename).stem or "document",
+                page_count=doc.page_count or 1,
+                source_format=doc.source_format,
+            )
+            stage.set_attribute("ingestion.pages", parsed.page_count)
+            stage.set_attribute("ingestion.chunks", len(parsed.chunks))
+            stage.set_attribute("ingestion.parser", parsed.parser)
+            stage.set_attribute("ingestion.ocr_pages", parsed.ocr_pages)
+        instruments().ingestion_stage.record(took[0], {"stage": "parse", "parser": parsed.parser})
     except ParseError as exc:
         raise PermanentIngestionError(exc.code, exc.message) from exc
     if not parsed.chunks:
@@ -136,22 +146,26 @@ def _process(rt: WorkerRuntime, store: IngestionStore, claim: JobClaim) -> str:
     store.transition(document_id, S.CHUNKING, S.EMBEDDING)
 
     # --- embed ---------------------------------------------------------------------------------
-    dense, sparse = _embed(rt, chunks)
+    with span("ingestion.embed", **{"ingestion.chunks": len(chunks)}), timed() as took:
+        dense, sparse = _embed(rt, chunks)
+    instruments().ingestion_stage.record(took[0], {"stage": "embed"})
     store.transition(document_id, S.EMBEDDING, S.INDEXING)
 
     # --- index (deterministic point ids: re-running overwrites, never duplicates) -----------------
-    upsert_chunks(
-        rt.qdrant,
-        settings,
-        user_id=user_id,
-        document_id=document_id,
-        version=version,
-        filename=filename,
-        chunks=chunks,
-        dense=dense,
-        sparse=sparse,
-        embedding_model=rt.embedder.model_name,
-    )
+    with span("ingestion.index", **{"ingestion.chunks": len(chunks)}), timed() as took:
+        upsert_chunks(
+            rt.qdrant,
+            settings,
+            user_id=user_id,
+            document_id=document_id,
+            version=version,
+            filename=filename,
+            chunks=chunks,
+            dense=dense,
+            sparse=sparse,
+            embedding_model=rt.embedder.model_name,
+        )
+    instruments().ingestion_stage.record(took[0], {"stage": "index"})
     delete_stale_versions(
         rt.qdrant, settings, user_id=user_id, document_id=document_id, keep=version
     )

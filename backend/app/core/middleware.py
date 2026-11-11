@@ -31,11 +31,17 @@ class RequestIdMiddleware:
         )
         request_id = sanitize_request_id(incoming)
         set_request_id(request_id)
+        from app.core.telemetry import set_attributes, trace_ids
+
+        set_attributes(**{"app.request_id": request_id})  # joins the span with logs and the client
+        ids = trace_ids()
 
         async def send_with_id(message: _Message) -> None:
             if message["type"] == "http.response.start":
                 headers = [(k, v) for k, v in message.get("headers", []) if k != b"x-request-id"]
                 headers.append((REQUEST_ID_HEADER.lower().encode(), request_id.encode()))
+                if ids is not None:
+                    headers.append((b"x-trace-id", ids[0].encode()))
                 message["headers"] = headers
             await send(message)
 

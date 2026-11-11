@@ -19,6 +19,7 @@ from app.ingestion.reconcile import reconcile
 from app.ingestion.runtime import get_runtime
 from app.ingestion.store import IngestionStore
 from app.tasks.celery_app import celery_app
+from app.tasks.tracing import task_span
 
 log = get_logger(__name__)
 
@@ -41,7 +42,10 @@ def process_document(self: Task[Any, Any], job_id: str) -> str:
     settings = rt.settings
     job_uuid = uuid.UUID(job_id)
     try:
-        return run_ingestion(rt, job_uuid)
+        with task_span(self, "task.process_document", **{"job.id": job_id}) as current:
+            outcome = run_ingestion(rt, job_uuid)
+            current.set_attribute("job.outcome", outcome)
+            return outcome
     except (SoftTimeLimitExceeded, Exception) as exc:
         reason = f"{type(exc).__name__}: {exc}"[:500]
         with rt.session_factory() as session:

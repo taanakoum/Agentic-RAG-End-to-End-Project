@@ -19,6 +19,8 @@ answer calls; the graph has no other loop, and `recursion_limit` is a backstop.
 from __future__ import annotations
 
 import asyncio
+import functools
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -49,6 +51,7 @@ from app.core.exceptions import (
     ModelTimeoutError,
 )
 from app.core.logging import get_logger
+from app.core.telemetry import span
 from app.llm.base import ChatMessage, LLMRequest
 from app.llm.structured import parse_model_json
 
@@ -120,6 +123,7 @@ async def prepare_query(state: AgentState, runtime: Ctx) -> dict[str, Any]:
     if not needs_rewrite(message, has_history=bool(ctx.history)):
         return {"retrieval_query": message}
     calls = state["llm_calls"]
+    spent_in, spent_out = state["prompt_tokens"], state["completion_tokens"]
     degraded = list(state["degraded"])
     try:
         response = await ctx.gateway.complete(
@@ -134,10 +138,18 @@ async def prepare_query(state: AgentState, runtime: Ctx) -> dict[str, Any]:
             )
         )
         calls += 1
+        spent_in += 0 if response.cache == "hit" else response.usage.prompt_tokens
+        spent_out += 0 if response.cache == "hit" else response.usage.completion_tokens
         parsed = parse_model_json(response.text, RewriteResult)
         if parsed.value is not None:
             await ctx.gateway.remember(response)
-            return {"retrieval_query": parsed.value.query, "rewritten": True, "llm_calls": calls}
+            return {
+                "retrieval_query": parsed.value.query,
+                "rewritten": True,
+                "llm_calls": calls,
+                "prompt_tokens": spent_in,
+                "completion_tokens": spent_out,
+            }
     except (ModelProviderError, ModelRateLimitedError, ModelTimeoutError):
         log.warning("query_rewrite_unavailable")
     # fallback: the previous user question plus the follow-up still carries the topic
@@ -147,6 +159,8 @@ async def prepare_query(state: AgentState, runtime: Ctx) -> dict[str, Any]:
         "retrieval_query": f"{previous} {message}".strip()[:400],
         "rewritten": True,
         "llm_calls": calls,
+        "prompt_tokens": spent_in,
+        "completion_tokens": spent_out,
         "degraded": degraded,
     }
 
@@ -256,6 +270,10 @@ async def generate(state: AgentState, runtime: Ctx) -> dict[str, Any]:
         "raw_output": response.text,
         "attempts": state["attempts"] + 1,
         "llm_calls": state["llm_calls"] + 1,
+        "prompt_tokens": state["prompt_tokens"]
+        + (0 if response.cache == "hit" else response.usage.prompt_tokens),
+        "completion_tokens": state["completion_tokens"]
+        + (0 if response.cache == "hit" else response.usage.completion_tokens),
         "cache_status": response.cache,
         "model_name": response.model,
     }
@@ -322,6 +340,9 @@ async def finalize(state: AgentState, runtime: Ctx) -> dict[str, Any]:
         answer_support=state["answer_support"],  # pyright: ignore[reportArgumentType]
         cache_status=state["cache_status"],  # pyright: ignore[reportArgumentType]
         llm_calls=state["llm_calls"],
+        prompt_tokens=state["prompt_tokens"],
+        completion_tokens=state["completion_tokens"],
+        latency_ms=int((time.perf_counter() - ctx.started) * 1000),
         degraded=state["degraded"],
         route=state["route"],
     )
@@ -339,8 +360,54 @@ async def persist(state: AgentState, runtime: Ctx) -> dict[str, Any]:
 # ---------------------------------------------------------------------- graph
 
 
+_NODE_ATTRS = (
+    "route",
+    "route_reason",
+    "attempts",
+    "verified",
+    "llm_calls",
+    "prompt_tokens",
+    "completion_tokens",
+    "cache_status",
+    "readable_documents",
+    "reranked",
+    "answer_support",
+    "rewritten",
+    "degraded",
+    "validation_errors",
+)
+
+
+def _traced(name: str, node: Any) -> Any:
+    """One span per graph node, with counts/flags from its result (never text)."""
+
+    @functools.wraps(node)
+    async def wrapper(state: AgentState, runtime: Ctx) -> dict[str, Any]:
+        with span(f"agent.{name}") as current:
+            delta: dict[str, Any] = await node(state, runtime)
+            attrs = {f"agent.{k}": delta[k] for k in _NODE_ATTRS if k in delta}
+            if "evidence" in delta:
+                attrs["agent.evidence_count"] = len(delta["evidence"])
+            for key, value in attrs.items():
+                current.set_attribute(key, value)
+            return delta
+
+    return wrapper
+
+
 def build_single_agent_graph(checkpointer: Any, *, repair_budget: int) -> Any:
-    graph: Any = StateGraph(AgentState, context_schema=TurnContext)
+    raw: Any = StateGraph(AgentState, context_schema=TurnContext)
+
+    class _Traced:
+        """Registers every node through `_traced` without repeating it eleven times."""
+
+        def __getattr__(self, attr: str) -> Any:
+            return getattr(raw, attr)
+
+        def add_node(self, name: str, node: Any) -> None:
+            raw.add_node(name, _traced(name, node))
+
+    graph: Any = _Traced()
     graph.add_node("classify", classify_node)
     graph.add_node("respond_smalltalk", respond_smalltalk)
     graph.add_node("respond_clarify", respond_clarify)
@@ -380,7 +447,7 @@ def build_single_agent_graph(checkpointer: Any, *, repair_budget: int) -> Any:
     )
     graph.add_edge("finalize", "persist")
     graph.add_edge("persist", END)
-    return graph.compile(checkpointer=checkpointer)
+    return raw.compile(checkpointer=checkpointer)
 
 
 async def run_turn(graph: Any, ctx: TurnContext, state: AgentState, thread_id: str) -> AgentState:

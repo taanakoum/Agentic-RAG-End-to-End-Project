@@ -16,6 +16,7 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import BodySizeLimitMiddleware, RequestIdMiddleware
+from app.core.telemetry import instrument_fastapi, setup_telemetry
 from app.infra.container import Infrastructure
 from app.retrieval.warmup import warm_models
 
@@ -59,6 +60,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None if settings.app_env == "prod" else "/openapi.json",
     )
     register_exception_handlers(app)
+    if setup_telemetry(settings):  # tracing is off unless OTEL_ENABLED (or a test exporter is set)
+        instrument_fastapi(app)
     # add_middleware: the last one added is outermost. Request ID must wrap everything else.
     app.add_middleware(
         BodySizeLimitMiddleware,

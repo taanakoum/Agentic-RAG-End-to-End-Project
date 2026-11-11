@@ -239,6 +239,13 @@ class Settings(BaseSettings):
     llm_quota_timezone: str = "America/Los_Angeles"
     rl_chat_daily_limit: int = Field(default=0, ge=0)  # chat turns per user per 24 h, 0 = unlimited
     llm_cache_enabled: bool = True
+    # Observability (docs/OBSERVABILITY.md). Off unless explicitly enabled with an endpoint.
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = ""  # e.g. http://127.0.0.1:6006 (Phoenix) or a collector
+    otel_exporter_otlp_headers: dict[str, str] = Field(default_factory=dict[str, str])
+    otel_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    otel_metrics_enabled: bool = False
+    otel_instrument_libraries: bool = True
     llm_cache_ttl_s: int = Field(default=3600, ge=1)
     llm_cache_timeout_s: float = Field(default=0.25, gt=0)
     llm_cache_max_bytes: int = Field(default=65536, ge=1024)

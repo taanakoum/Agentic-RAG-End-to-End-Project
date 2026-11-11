@@ -32,6 +32,7 @@ from redis.exceptions import RedisError
 from app.core.config import Settings
 from app.core.exceptions import ModelRateLimitedError
 from app.core.logging import get_logger
+from app.core.telemetry import instruments, span, timed
 from app.infra.rate_limit import subject_key
 from app.llm.base import ChatModel, LLMRequest, LLMResponse, Usage
 
@@ -148,6 +149,32 @@ class LLMGateway:
             await self._redis_call(self._redis.delete(key))
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
+        """Cache lookup, model call, metrics. Traced without prompts or answers."""
+        meter = instruments()
+        schema = {"schema": request.schema_name}
+        with span("llm.call", **{"llm.schema": request.schema_name}) as current, timed() as took:
+            try:
+                response = await self._complete(request)
+            except BaseException as exc:
+                meter.llm_requests.add(
+                    1, {**schema, "outcome": "error", "error": type(exc).__name__}
+                )
+                raise
+            current.set_attribute("llm.cache", response.cache)
+            current.set_attribute("llm.model", response.model)
+            current.set_attribute("llm.attempts", response.attempts)
+            current.set_attribute("llm.fallback_used", response.fallback_used)
+            current.set_attribute("llm.prompt_tokens", response.usage.prompt_tokens)
+            current.set_attribute("llm.completion_tokens", response.usage.completion_tokens)
+        meter.cache.add(1, {"status": response.cache})
+        meter.llm_requests.add(1, {**schema, "outcome": "ok", "cache": response.cache})
+        if response.cache != "hit":  # a cache hit spends no tokens and no provider latency
+            meter.llm_tokens.add(response.usage.prompt_tokens, {"direction": "prompt"})
+            meter.llm_tokens.add(response.usage.completion_tokens, {"direction": "completion"})
+            meter.llm_latency.record(took[0], {**schema, "model": response.model})
+        return response
+
+    async def _complete(self, request: LLMRequest) -> LLMResponse:
         s = self._settings
         if not (s.llm_cache_enabled and request.use_cache):
             response = await self._call_model(request)

@@ -346,8 +346,9 @@ async def test_a_streamed_and_a_plain_turn_give_the_same_answer(
     streamed: dict[str, Any] = json.loads(json.dumps(last["response"]))
     plain_meta: dict[str, Any] = plain["metadata"]
     streamed_meta: dict[str, Any] = streamed["metadata"]
-    plain_meta.pop("cache_status")  # miss vs hit
-    streamed_meta.pop("cache_status")
+    for volatile in ("cache_status", "latency_ms", "prompt_tokens", "completion_tokens"):  # spend
+        plain_meta.pop(volatile)
+        streamed_meta.pop(volatile)
     assert plain == streamed
 
 

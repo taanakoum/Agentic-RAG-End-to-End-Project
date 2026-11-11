@@ -32,6 +32,7 @@ from app.core.exceptions import (
     RetrievalTimeoutError,
 )
 from app.core.logging import get_logger
+from app.core.telemetry import instruments, span, timed
 from app.ingestion.embedding import Embedder
 from app.ingestion.indexing import collection_name
 from app.retrieval.fusion import rrf_fuse
@@ -119,6 +120,40 @@ class Retriever:
         return out
 
     async def search(
+        self,
+        *,
+        user_id: uuid.UUID,
+        query: str,
+        document_ids: Sequence[uuid.UUID],
+        mode: RetrievalMode,
+        top_k: int,
+    ) -> RetrievalResult:
+        """Authorized hybrid search (traced: spans and timings carry counts, never query text)."""
+        with (
+            span(
+                "retrieval.search",
+                mode=mode.value,
+                top_k=top_k,
+                readable_documents=len(document_ids),
+            ) as current,
+            timed() as total,
+        ):
+            result = await self._search(
+                user_id=user_id, query=query, document_ids=document_ids, mode=mode, top_k=top_k
+            )
+            current.set_attribute("retrieval.chunks", len(result.chunks))
+            for name, count in result.candidates.items():
+                current.set_attribute(f"retrieval.candidates.{name}", count)
+            if result.degraded:
+                current.set_attribute("retrieval.degraded", list(result.degraded))
+        meter = instruments().retrieval_latency
+        meter.record(total[0], {"stage": "total", "mode": mode.value})
+        for stage, ms in result.timings_ms.items():
+            if stage != "total":
+                meter.record(ms, {"stage": stage, "mode": mode.value})
+        return result
+
+    async def _search(
         self,
         *,
         user_id: uuid.UUID,
@@ -232,6 +267,16 @@ class Retriever:
         return hits["dense"], hits["sparse"]
 
     async def _rerank(
+        self, text: str, candidates: list[RankedChunk], result: RetrievalResult
+    ) -> list[RankedChunk]:
+        with span("retrieval.rerank", candidates=len(candidates)) as current:
+            ranked = await self._rerank_impl(text, candidates, result)
+            current.set_attribute(
+                "retrieval.reranked", any(c.rerank_score is not None for c in ranked)
+            )
+            return ranked
+
+    async def _rerank_impl(
         self, text: str, candidates: list[RankedChunk], result: RetrievalResult
     ) -> list[RankedChunk]:
         s = self._settings

@@ -11,6 +11,7 @@ text, the event sink). It is passed with `context=` and is never checkpointed.
 
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -53,6 +54,8 @@ class AgentState(TypedDict):
     response: dict[str, Any] | None
     cache_status: str
     llm_calls: int
+    prompt_tokens: int
+    completion_tokens: int
     model_name: str
     answer_support: str
     assistant_message_id: str | None
@@ -79,6 +82,8 @@ def fresh_turn_state(execution_id: uuid.UUID, user_message: str) -> AgentState:
         response=None,
         cache_status="none",
         llm_calls=0,
+        prompt_tokens=0,
+        completion_tokens=0,
         model_name="",
         answer_support="none",
         assistant_message_id=None,
@@ -110,6 +115,7 @@ class TurnContext:
     memory_texts: list[str] = field(default_factory=list[str])
     llm_response: Any = None  # the LLMResponse to remember once the answer is saved
     cacheable: bool = False
+    started: float = field(default_factory=time.perf_counter)
 
     async def announce(self, stage: str) -> None:
         if self.status is not None:

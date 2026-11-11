@@ -444,7 +444,7 @@ class StubCelery:
         self.fail = fail
         self._lock = threading.Lock()
 
-    def send_task(self, name: str, args: list[str]) -> None:
+    def send_task(self, name: str, args: list[str], headers: dict[str, str] | None = None) -> None:
         if self.fail:
             raise ConnectionError("broker down")
         with self._lock:

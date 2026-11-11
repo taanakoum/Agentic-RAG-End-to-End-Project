@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from celery import Celery
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logging import get_logger
+from app.core.telemetry import inject_traceparent
 from app.ingestion.store import utcnow
 from app.models.document import OutboxEvent
 
@@ -31,6 +34,15 @@ TASK_BY_KIND = {
     KIND_PURGE_USER_MEMORIES: "memory.purge_user_memories",
     KIND_CONSOLIDATE: "memory.consolidate_conversation",
 }
+
+
+@event.listens_for(OutboxEvent, "before_insert")
+def _remember_trace(_mapper: Any, _connection: Any, target: OutboxEvent) -> None:
+    """Store the current trace context with the event, so the background job continues the
+    trace of the request that caused it (upload -> worker), across the outbox and the broker."""
+    parent = inject_traceparent()
+    if parent and "traceparent" not in target.payload:
+        target.payload = {**target.payload, "traceparent": parent}
 
 
 def _args_for(event: OutboxEvent) -> list[str]:
@@ -74,7 +86,12 @@ def dispatch_outbox(
         )
         for event in events:
             try:
-                celery.send_task(TASK_BY_KIND[event.kind], args=_args_for(event))
+                parent = event.payload.get("traceparent")
+                celery.send_task(
+                    TASK_BY_KIND[event.kind],
+                    args=_args_for(event),
+                    headers={"traceparent": parent} if parent else None,
+                )
             except Exception as exc:
                 # Broker down or unknown kind: record and leave the row unsent for the next pass.
                 event.attempts += 1

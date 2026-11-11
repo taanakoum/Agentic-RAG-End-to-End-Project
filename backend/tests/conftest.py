@@ -48,6 +48,32 @@ for _name in ("LOGIN_IP", "REGISTER_IP", "REFRESH_IP", "FORGOT_IP", "RESET_IP"):
     os.environ[f"RL_{_name}_LIMIT"] = "100000"
 
 
+# Developer-specific .env values must not change test behaviour (limits are tested explicitly).
+for _name, _value in (
+    ("LLM_DAILY_REQUEST_BUDGET", "0"),
+    ("LLM_REQUESTS_PER_MINUTE", "0"),
+    ("RL_CHAT_DAILY_LIMIT", "0"),
+    ("LLM_MAX_CONCURRENCY", "4"),
+    ("LLM_MAX_CONCURRENCY_PER_USER", "2"),
+    ("LLM_MAX_TOKENS", "1024"),
+    ("LLM_JSON_MODE", "json_object"),
+    ("OTEL_ENABLED", "false"),
+    ("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+):
+    os.environ[_name] = _value
+
+from app.core.config import get_settings  # noqa: E402
+from tests import telemetry_helpers  # noqa: E402
+
+telemetry_helpers.install(get_settings())  # spans/metrics are captured in memory for assertions
+
+
+@pytest.fixture(autouse=True)
+def _fresh_spans() -> Iterator[None]:
+    telemetry_helpers.EXPORTER.clear()
+    yield
+
+
 @pytest.fixture(scope="session")
 def tmp_root() -> Iterator[Path]:
     yield _TMP_ROOT

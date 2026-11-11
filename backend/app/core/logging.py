@@ -51,11 +51,25 @@ def add_request_id(
     return event_dict
 
 
+def add_trace_ids(
+    _logger: Any, _method: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """Put the active trace/span id on every log line, so logs and traces can be joined."""
+    from app.core.telemetry import trace_ids
+
+    ids = trace_ids()
+    if ids is not None:
+        event_dict.setdefault("trace_id", ids[0])
+        event_dict.setdefault("span_id", ids[1])
+    return event_dict
+
+
 def configure_logging(*, level: str, json_output: bool, service: str) -> None:
     """Configure structlog and route stdlib logging (uvicorn, celery, sqlalchemy) through it."""
     shared: list[Any] = [
         structlog.contextvars.merge_contextvars,
         add_request_id,
+        add_trace_ids,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         redact_processor,

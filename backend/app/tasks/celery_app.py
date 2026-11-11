@@ -7,7 +7,7 @@ Execution model (ADR-003): tasks are plain synchronous functions that use synchr
 from __future__ import annotations
 
 from celery import Celery
-from celery.signals import setup_logging
+from celery.signals import setup_logging, worker_init, worker_process_init
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -75,3 +75,14 @@ def _configure_worker_logging(**_: object) -> None:
 
 
 setup_logging.connect(_configure_worker_logging)
+
+
+def _configure_worker_telemetry(**_: object) -> None:
+    """Same OTLP setup as the API (a no-op unless OTEL_ENABLED); spans continue API traces."""
+    from app.core.telemetry import setup_telemetry
+
+    setup_telemetry(get_settings(), service_name="agentic-rag-worker")
+
+
+worker_init.connect(_configure_worker_telemetry)
+worker_process_init.connect(_configure_worker_telemetry)
