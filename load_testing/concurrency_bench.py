@@ -20,6 +20,7 @@ import statistics
 import sys
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import httpx2
@@ -47,7 +48,11 @@ def summary(name: str, values: list[float]) -> str:
     )
 
 
-async def timed(coro_factory, bucket: list[float], errors: list[str]):
+async def timed(
+    coro_factory: Callable[[], Awaitable[httpx2.Response]],
+    bucket: list[float],
+    errors: list[str],
+) -> httpx2.Response | None:
     start = time.perf_counter()
     try:
         response = await coro_factory()
@@ -99,7 +104,9 @@ async def user_session(
             )
             if n % 5 == 0:
                 pdf = sample_text_pdf(f"{run_id}-{index}-{n}")
-                files = {"file": ("bench.pdf", pdf, "application/pdf")}
+                files: dict[str, tuple[str, bytes, str]] = {
+                    "file": ("bench.pdf", pdf, "application/pdf")
+                }
                 await timed(
                     lambda files=files: client.post(
                         "/api/v1/documents/upload", files=files, headers=headers

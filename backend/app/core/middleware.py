@@ -136,3 +136,46 @@ class BodySizeLimitMiddleware:
             await send(message)
 
         await self.app(scope, limited_receive, tracking_send)
+
+
+_DOC_PATHS = ("/docs", "/openapi.json")
+
+
+class SecurityHeadersMiddleware:
+    """Defensive response headers for a JSON API (nothing here is ever rendered as a page).
+
+    `no-store` keeps tokens and personal data out of shared caches and browser history; the CSP
+    forbids everything (an API has no scripts, styles or frames); HSTS is only sent where TLS is
+    terminated for the real deployment (`hsts=True`), never on plain-HTTP development.
+    The interactive docs (`/docs`, development only) need scripts, so they get no CSP.
+    """
+
+    def __init__(self, app: Any, *, hsts: bool = False) -> None:
+        self.app = app
+        self.hsts = hsts
+
+    async def __call__(self, scope: _Message, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = str(scope.get("path", ""))
+        add: list[tuple[bytes, bytes]] = [
+            (b"x-content-type-options", b"nosniff"),
+            (b"referrer-policy", b"no-referrer"),
+            (b"x-frame-options", b"DENY"),
+            (b"cache-control", b"no-store"),
+        ]
+        if not path.startswith(_DOC_PATHS):
+            add.append((b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'"))
+        if self.hsts:
+            add.append((b"strict-transport-security", b"max-age=63072000; includeSubDomains"))
+
+        async def send_with_headers(message: _Message) -> None:
+            if message["type"] == "http.response.start":
+                headers: list[tuple[bytes, bytes]] = list(message.get("headers", []))
+                present = {k.lower() for k, _ in headers}
+                headers.extend((k, v) for k, v in add if k not in present)  # never override
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)

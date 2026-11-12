@@ -127,12 +127,13 @@ def _docling_doc(pdf: bytes, name: str) -> Any:
 
 
 def strat_docling_hybrid(doc: str, title: str, pdf: bytes) -> list[EvalChunk]:
-    from docling.chunking import HybridChunker
+    from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
     from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
     from transformers import AutoTokenizer
 
     tok = HuggingFaceTokenizer(
-        tokenizer=AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5"), max_tokens=320
+        tokenizer=AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5"),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        max_tokens=320,
     )
     chunker = HybridChunker(tokenizer=tok)
     document = _docling_doc(pdf, doc)
@@ -181,8 +182,8 @@ def evaluate(
     texts = [c.embedded for c in chunks]
     dense = np.array(embedder.embed_dense(texts))
     sparse = embedder.embed_sparse(texts)
-    sparse_model = embedder._sparse_model()
-    dense_model = embedder._dense_model()
+    sparse_model = embedder._sparse_model()  # pyright: ignore[reportPrivateUsage]
+    dense_model = embedder._dense_model()  # pyright: ignore[reportPrivateUsage]
     squashed = [squash(c.raw) for c in chunks]
 
     preserved = 0
@@ -214,7 +215,10 @@ def evaluate(
 
     def metrics(ranks: list[int | None]) -> dict[str, float]:
         n = len(ranks)
-        hit = lambda k: sum(1 for r in ranks if r is not None and r <= k) / n  # noqa: E731
+
+        def hit(k: int) -> float:
+            return sum(1 for r in ranks if r is not None and r <= k) / n
+
         mrr = sum(1 / r for r in ranks if r) / n
         return {"hit@1": hit(1), "hit@3": hit(3), "hit@5": hit(5), "mrr": mrr}
 

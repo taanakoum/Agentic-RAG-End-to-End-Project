@@ -77,3 +77,72 @@ def _fresh_spans() -> Iterator[None]:
 @pytest.fixture(scope="session")
 def tmp_root() -> Iterator[Path]:
     yield _TMP_ROOT
+
+
+# ---------------------------------------------------------------- test categories
+# One command per category (scripts/test.ps1). Categories are assigned by file here, in one place,
+# so that a new test file is classified by editing a single table; a file may be in several.
+_CATEGORY_FILES: dict[str, frozenset[str]] = {
+    "e2e": frozenset(
+        {
+            "test_chat_e2e.py",
+            "test_retrieval_e2e.py",
+            "test_documents_pipeline.py",
+            "test_memory_pipeline.py",
+            "test_chat_lifecycle.py",
+            "test_frontend_api.py",
+            "test_frontend_ui.py",
+            "test_frontend_flows.py",
+            "test_observability.py",
+        }
+    ),
+    "security": frozenset(
+        {
+            "test_auth_api.py",
+            "test_auth_ownership.py",
+            "test_mfa_api.py",
+            "test_account_api.py",
+            "test_account_lifecycle.py",
+            "test_rate_limiter.py",
+            "test_security.py",
+            "test_sandbox.py",
+            "test_warm_sandbox.py",
+            "test_key_rotation_email_crypto.py",
+            "test_telemetry.py",
+            "test_feedback_api.py",
+            "test_outages.py",
+        }
+    ),
+    "concurrency": frozenset(
+        {
+            "test_concurrency.py",
+            "test_chat_turns.py",
+            "test_llm_quota.py",
+            "test_rate_limiter.py",
+            "test_checkpointer.py",
+            "test_orphans.py",
+        }
+    ),
+    "failure": frozenset(
+        {
+            "test_workers_down.py",
+            "test_orphans.py",
+            "test_celery_and_health.py",
+            "test_llm_cache.py",
+            "test_llm_quota.py",
+            "test_storage_contract.py",
+            "test_outages.py",
+            "test_agent_eval.py",
+        }
+    ),
+}
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        path = Path(str(item.fspath))
+        if path.parent.name == "unit":
+            item.add_marker(pytest.mark.unit)
+        for category, files in _CATEGORY_FILES.items():
+            if path.name in files:
+                item.add_marker(getattr(pytest.mark, category))

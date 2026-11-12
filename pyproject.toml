@@ -90,6 +90,11 @@ markers = [
     "real_model: downloads and runs the real embedding models (slow, needs network on first run)",
     "docling: runs the Docling pipeline (loads layout models; ~20 s per document)",
     "real_llm: calls a REAL free hosted model (needs REAL_LLM_* env vars; skipped otherwise)",
+    "unit: no external services (everything under backend/tests/unit)",
+    "e2e: a complete user workflow through the real stack (API, worker, stores, frontend)",
+    "security: authentication, authorization, isolation, injection, privacy, abuse limits",
+    "concurrency: races, simultaneous users, locks, idempotency, quotas",
+    "failure: dependency outages, crashes, timeouts, recovery",
 ]
 
 [tool.ruff]
@@ -107,7 +112,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF"]
 "backend/tests/**" = ["S101", "S105", "S106", "RUF001"]  # asserts, fake secrets, intentional Unicode inputs
 
 [tool.pyright]
-include = ["backend", "frontend"]
+include = ["backend", "frontend", "evaluation", "load_testing"]
 exclude = ["backend/migrations/versions"]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"

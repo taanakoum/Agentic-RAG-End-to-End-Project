@@ -13,9 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.chat.checkpointer import use_selector_loop
 from app.core.config import Settings, get_settings
+from app.core.dependency_errors import register_dependency_handlers
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import BodySizeLimitMiddleware, RequestIdMiddleware
+from app.core.middleware import (
+    BodySizeLimitMiddleware,
+    RequestIdMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.core.telemetry import instrument_fastapi, setup_telemetry
 from app.infra.container import Infrastructure
 from app.retrieval.warmup import warm_models
@@ -60,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None if settings.app_env == "prod" else "/openapi.json",
     )
     register_exception_handlers(app)
+    register_dependency_handlers(app)
     if setup_telemetry(settings):  # tracing is off unless OTEL_ENABLED (or a test exporter is set)
         instrument_fastapi(app)
     # add_middleware: the last one added is outermost. Request ID must wrap everything else.
@@ -79,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
         )
+    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.app_env == "prod")
     app.add_middleware(RequestIdMiddleware)
     app.include_router(api_router)
     return app

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -80,23 +81,24 @@ THRESHOLDS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7]
 def main() -> None:
     embedder = FastEmbedEmbedder(get_settings())
     docs = np.array(embedder.embed_dense(MEMORIES))
-    rel_scores, rel_top1 = [], []
+    rel_scores: list[float] = []
+    rel_top1: list[bool] = []
     for query, target in RELEVANT:
         scores = docs @ np.array(embedder.embed_query_dense(query))
         rel_scores.append(float(scores[target]))
         rel_top1.append(int(np.argmax(scores)) == target)
-    irr_best = []
+    irr_best: list[float] = []
     for query in IRRELEVANT:
         scores = docs @ np.array(embedder.embed_query_dense(query))
         irr_best.append(float(scores.max()))
-    rows = []
+    rows: list[dict[str, float]] = []
     for t in THRESHOLDS:
         recall = sum(1 for s in rel_scores if s >= t) / len(rel_scores)
         false_hits = sum(1 for s in irr_best if s >= t) / len(irr_best)
         rows.append(
             {"threshold": t, "recall_relevant": recall, "false_retrieval_irrelevant": false_hits}
         )
-    result = {
+    result: dict[str, Any] = {
         "memories": len(MEMORIES),
         "relevant_queries": len(RELEVANT),
         "irrelevant_queries": len(IRRELEVANT),
@@ -124,7 +126,7 @@ def main() -> None:
         f"queries: {result['top1_accuracy_relevant']:.2f}.",
         "",
         "Cosine score of the target memory (relevant queries): "
-        f"min {rel_scores and min(rel_scores):.2f}, median {np.median(rel_scores):.2f}, max {max(rel_scores):.2f}. "
+        f"min {min(rel_scores):.2f}, median {np.median(rel_scores):.2f}, max {max(rel_scores):.2f}. "
         "Best score any memory gets for an irrelevant query: "
         f"min {min(irr_best):.2f}, median {np.median(irr_best):.2f}, max {max(irr_best):.2f}.",
         "",

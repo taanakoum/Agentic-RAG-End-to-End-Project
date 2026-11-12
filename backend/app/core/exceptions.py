@@ -258,11 +258,15 @@ def _response(
     return JSONResponse(body.model_dump(), status_code=status_code, headers=out_headers)
 
 
+def app_error_response(exc: AppError) -> JSONResponse:
+    return _response(exc.status_code, exc.code, exc.message, exc.details, exc.headers)
+
+
 async def _app_error_handler(_: Request, exc: Exception) -> JSONResponse:
     exc = cast(AppError, exc)  # registered only for AppError
     if exc.status_code >= 500:
         log.error("app_error", code=exc.code, status=exc.status_code, exc_info=exc)
-    return _response(exc.status_code, exc.code, exc.message, exc.details, exc.headers)
+    return app_error_response(exc)
 
 
 async def _validation_handler(_: Request, exc: Exception) -> JSONResponse:

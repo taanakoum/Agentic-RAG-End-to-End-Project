@@ -30,6 +30,7 @@ import os
 import statistics
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -233,7 +234,7 @@ def write_report(rows: list[dict[str, Any]], model: str) -> None:
     answerable = [r for r in ok if r["kind"] == "answerable"]
     unanswerable = [r for r in ok if r["kind"] == "unanswerable"]
 
-    def share(items: list[dict[str, Any]], pred: Any) -> float:
+    def share(items: list[dict[str, Any]], pred: Callable[[dict[str, Any]], Any]) -> float:
         return sum(1 for r in items if pred(r)) / len(items) if items else float("nan")
 
     latencies = sorted(r["latency_s"] for r in ok)
