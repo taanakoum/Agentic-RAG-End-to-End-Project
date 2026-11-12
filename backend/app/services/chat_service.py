@@ -289,6 +289,17 @@ class ChatService:
         meter.chat_latency.record(took[0], {"route": meta.route})
         return outcome
 
+    async def _prune_checkpoints(self, saver: Any, thread_id: str) -> None:
+        """Keep only the latest checkpoint of the thread (best effort, never fails the turn).
+
+        Every turn starts from a fresh state and the history lives in `messages`, so older
+        checkpoints are never read again; without this the tables grow with every turn.
+        """
+        try:
+            await asyncio.wait_for(saver.aprune([thread_id], strategy="keep_latest"), timeout=5)
+        except Exception as exc:  # a failed prune only costs disk space until the next turn
+            log.warning("checkpoint_prune_failed", error=type(exc).__name__)
+
     async def _execute(self, plan: TurnPlan, *, status: Any = None) -> TurnOutcome:
         infra = self._infra
         lease = _Lease(main=asyncio.current_task())
@@ -301,6 +312,7 @@ class ChatService:
             ctx = self._context(plan, status)
             state = fresh_turn_state(plan.handle.execution_id, plan.message)
             final = await run_turn(graph, ctx, state, str(plan.handle.thread_id))
+            await self._prune_checkpoints(saver, str(plan.handle.thread_id))
             response = RAGResponse.model_validate(final["response"])
             message_id = uuid.UUID(str(final["assistant_message_id"]))
             if ctx.cacheable and ctx.llm_response is not None:

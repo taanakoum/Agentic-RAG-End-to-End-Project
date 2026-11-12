@@ -826,3 +826,17 @@ async def test_a_turn_survives_a_restart_of_the_whole_process(
         "assistant",
     ]
     _ = (cache_key, ChatExecution)
+
+
+async def test_old_checkpoints_are_pruned_so_a_long_conversation_does_not_grow_the_tables(
+    client: httpx2.AsyncClient, infra: Infrastructure, scripted: ScriptedModel
+) -> None:
+    alice = await make_actor(client)
+    await seed_handbook(infra, alice)
+    session = await make_session(client, alice)
+    for number in range(4):
+        await ask(infra, alice, session, f"What is the maximum upload size? ({number})")
+    thread = await scalar(infra, "SELECT thread_id::text FROM conversations")
+    rows = await scalar(infra, "SELECT count(*) FROM checkpoints WHERE thread_id = :t", t=thread)
+    assert rows == 1  # only the latest survives (four turns were run)
+    assert len(scripted.calls) == 4
