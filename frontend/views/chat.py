@@ -342,7 +342,10 @@ def render() -> None:
     sessions = _sidebar()
     current = _resolve_active(sessions)
     active = _active()
-    st.title(current["title"] if current else "New conversation")
+    if current:
+        st.subheader(f":material/forum: {current['title']}")
+    else:
+        st.title("New conversation")
     if current:
         _settings(current)
         _history(current["id"])

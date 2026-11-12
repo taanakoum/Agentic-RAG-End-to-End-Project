@@ -23,11 +23,10 @@ def _sidebar_header(me: dict[str, object]) -> str:
     name = str(me.get("display_name") or me.get("email") or "")
     with st.sidebar:
         with st.container(border=True):
-            avatar, who = st.columns([1, 4], vertical_alignment="center")
-            avatar.markdown(f"#### {theme.initials(name)}")
-            who.markdown(f"Signed in as **{me.get('display_name') or me.get('email', '')}**")
+            st.caption("Signed in as")
+            st.markdown(f":material/account_circle: **{name}**")
             if me.get("display_name"):
-                who.caption(str(me.get("email", "")))
+                st.caption(str(me.get("email", "")))
         section = st.radio(
             "Go to",
             list(SECTIONS),

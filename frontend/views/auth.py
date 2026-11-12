@@ -175,7 +175,7 @@ def _register_form() -> None:
 
 
 def _pitch() -> None:
-    st.markdown("### Ask your documents.\n### Get answers you can verify.")
+    st.markdown("### Ask your documents. Get answers you can verify.")
     st.write(
         "Upload handbooks, contracts, reports or notes, then ask in plain language. "
         "Every answer comes with the exact passages it is based on."
