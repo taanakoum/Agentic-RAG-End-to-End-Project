@@ -19,7 +19,7 @@ services first: `scripts/dev_services.ps1 start`).
 | `concurrency` | races, simultaneous users, idempotency, quotas | 61 |
 | `failure` | dependency outages, crashes, timeouts, recovery | 99 |
 | `frontend` | the Streamlit client and app | 46 |
-| `all` | the full suite | 1085 |
+| `all` | the full suite | 1113 (2026-11-13; 93.2% line coverage) |
 | `quality` | `ruff format --check`, `ruff check`, `pyright` (strict; backend, frontend, evaluation, load_testing), migration upgrade/downgrade/upgrade | n/a |
 
 Categories are assigned by file in one table (`_CATEGORY_FILES` in `backend/tests/conftest.py`); a

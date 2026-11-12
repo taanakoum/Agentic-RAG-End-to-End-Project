@@ -9,8 +9,9 @@ Built with FastAPI, LangGraph, PostgreSQL, Qdrant, Redis/Celery and Streamlit. I
 against a **free hosted language model**: no GPU, no paid service and no local model download is needed
 for the language model.
 
-> Status: feature complete for the core product and thoroughly tested (1,090 automated tests, strict
-> type checking, security and failure-recovery suites). Load testing and a verified Docker deployment
+> Status: feature complete for the core product and thoroughly tested (1,113 automated tests with 93%
+> line coverage, strict type checking, security and failure-recovery suites, plus a real-browser
+> walk-through). Load testing and a verified Docker deployment
 > are the remaining roadmap items; see [Status and limitations](#status-and-limitations).
 
 ---
@@ -218,7 +219,7 @@ OpenAI-compatible server and point `LLM_BASE_URL` at it ([docs/SECURITY.md](docs
 
 ```bash
 uv run --no-sync pytest backend/tests/unit              # 528 tests, no services needed
-uv run --no-sync pytest                                 # everything: 1,090 tests (needs the services)
+uv run --no-sync pytest                                 # everything: 1,113 tests (needs the services)
 uv run --no-sync ruff check . && uv run --no-sync ruff format --check . && uv run --no-sync pyright
 ```
 
