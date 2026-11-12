@@ -224,13 +224,6 @@ class Settings(BaseSettings):
     llm_context_max_chars: int = Field(default=12000, ge=1000)
     rl_chat_limit: int = Field(default=20, ge=1)
     rl_chat_window_s: int = Field(default=60, ge=1)
-    llm_max_concurrency_per_user: int = Field(default=2, ge=1, le=16)
-    llm_queue_timeout_s: float = Field(default=15.0, gt=0)
-    llm_total_budget_s: float = Field(default=90.0, gt=0)
-    llm_repair_attempts: int = Field(default=1, ge=0, le=2)
-    llm_context_max_chars: int = Field(default=12000, ge=1000)
-    rl_chat_limit: int = Field(default=20, ge=1)
-    rl_chat_window_s: int = Field(default=60, ge=1)
     llm_max_tokens: int = Field(default=1024, ge=16, le=32768)
     llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     # free-tier quota guard (docs/DEPLOYMENT.md "Calibrating daily usage"); 0 = unlimited

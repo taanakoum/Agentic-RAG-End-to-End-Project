@@ -1,0 +1,31 @@
+{
+ "dataset": "routing_v1",
+ "route_cases": 86,
+ "route_accuracy": 1.0,
+ "per_route": {
+  "smalltalk": {
+   "support": 32,
+   "precision": 1.0,
+   "recall": 1.0
+  },
+  "clarify": {
+   "support": 24,
+   "precision": 1.0,
+   "recall": 1.0
+  },
+  "kb": {
+   "support": 30,
+   "precision": 1.0,
+   "recall": 1.0
+  }
+ },
+ "confusion": {
+  "clarify->clarify": 24,
+  "kb->kb": 30,
+  "smalltalk->smalltalk": 32
+ },
+ "route_mismatches": [],
+ "rewrite_cases": 11,
+ "rewrite_accuracy": 1.0,
+ "rewrite_mismatches": []
+}

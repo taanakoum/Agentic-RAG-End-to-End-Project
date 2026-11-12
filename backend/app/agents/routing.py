@@ -60,7 +60,7 @@ _ANAPHORA = re.compile(
     r"\b(it|its|that|this|they|them|their|those|these|he|she|him|her"
     r"|the (first|second|third|last|previous|former|latter)"
     r" (one|point|part|section|document|file|item|option)"
-    r"|what about|and the|how about|same|also|more|why)\b",
+    r"|what about|and (the|for|in|what|how)|what if|how about|same|also|more|why)\b",
     re.IGNORECASE,
 )
 

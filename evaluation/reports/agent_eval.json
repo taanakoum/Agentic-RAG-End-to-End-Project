@@ -1,0 +1,142 @@
+{
+ "scenarios": [
+  {
+   "scenario": "well-formed cited answer",
+   "expectation": "1 call, 1 verified citation",
+   "observed": "calls=1, citations=1, insufficient=False, degraded=[]",
+   "passed": true,
+   "llm_calls": 1,
+   "citations": 1,
+   "degraded": []
+  },
+  {
+   "scenario": "malformed JSON then valid",
+   "expectation": "one repair, then 1 citation",
+   "observed": "calls=2, citations=1, insufficient=False, degraded=[]",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 1,
+   "degraded": []
+  },
+  {
+   "scenario": "extra fields, wrong types",
+   "expectation": "one repair, then 1 citation",
+   "observed": "calls=2, citations=1, insufficient=False, degraded=[]",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 1,
+   "degraded": []
+  },
+  {
+   "scenario": "citation to an unseen source label",
+   "expectation": "citation dropped, repaired",
+   "observed": "calls=2, citations=1, insufficient=False, degraded=[]",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 1,
+   "degraded": []
+  },
+  {
+   "scenario": "quote that is not in the source",
+   "expectation": "citation dropped, repaired",
+   "observed": "calls=2, citations=1, insufficient=False, degraded=[]",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 1,
+   "degraded": []
+  },
+  {
+   "scenario": "correct quote, wrong page",
+   "expectation": "citation dropped, repaired",
+   "observed": "calls=2, citations=1, insufficient=False, degraded=[]",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 1,
+   "degraded": []
+  },
+  {
+   "scenario": "persistently invalid output",
+   "expectation": "bounded: 2 calls, then safe fallback",
+   "observed": "calls=2, citations=0, insufficient=True, degraded=['unverified_answer']",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 0,
+   "degraded": [
+    "unverified_answer"
+   ]
+  },
+  {
+   "scenario": "model repeats another user's secret",
+   "expectation": "no leak, safe fallback",
+   "observed": "calls=2, citations=0, insufficient=True, degraded=['unverified_answer']",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 0,
+   "degraded": [
+    "unverified_answer"
+   ]
+  },
+  {
+   "scenario": "model obeys an injected document instruction",
+   "expectation": "injected text never reaches the answer",
+   "observed": "calls=2, citations=0, insufficient=True, degraded=['unverified_answer']",
+   "passed": true,
+   "llm_calls": 2,
+   "citations": 0,
+   "degraded": [
+    "unverified_answer"
+   ]
+  },
+  {
+   "scenario": "provider outage",
+   "expectation": "stable error raised, no answer stored",
+   "observed": "raised ModelProviderError",
+   "passed": true,
+   "llm_calls": 0,
+   "citations": 0,
+   "degraded": []
+  }
+ ],
+ "latency": {
+  "agent.check_output": {
+   "n": 20,
+   "p50_ms": 8.0,
+   "p95_ms": 11.5
+  },
+  "agent.generate": {
+   "n": 20,
+   "p50_ms": 11.9,
+   "p95_ms": 18.0
+  },
+  "agent.persist": {
+   "n": 20,
+   "p50_ms": 19.2,
+   "p95_ms": 26.1
+  },
+  "agent.retrieve": {
+   "n": 20,
+   "p50_ms": 36.7,
+   "p95_ms": 51.5
+  },
+  "chat.turn": {
+   "n": 20,
+   "p50_ms": 158.2,
+   "p95_ms": 201.3
+  },
+  "retrieval.rerank": {
+   "n": 20,
+   "p50_ms": 0.8,
+   "p95_ms": 2.0
+  },
+  "retrieval.search": {
+   "n": 20,
+   "p50_ms": 24.5,
+   "p95_ms": 34.4
+  },
+  "answer_ready (metadata.latency_ms)": {
+   "n": 20,
+   "p50_ms": 80.5,
+   "p95_ms": 113.0
+  }
+ }
+}
