@@ -2,6 +2,7 @@
 
 from app.models.chat import ChatExecution, Conversation, Message
 from app.models.document import Document, IngestionJob, OutboxEvent
+from app.models.feedback import MessageFeedback
 from app.models.memory import Memory, UserPreferences
 from app.models.mfa import MfaRecoveryCode, UserMfa
 from app.models.one_time_token import OneTimeToken
@@ -15,6 +16,7 @@ __all__ = [
     "IngestionJob",
     "Memory",
     "Message",
+    "MessageFeedback",
     "MfaRecoveryCode",
     "OneTimeToken",
     "OutboxEvent",

@@ -202,6 +202,8 @@ class Settings(BaseSettings):
     memory_max_chars: int = Field(default=500, ge=20, le=5000)
     memory_consolidate_every: int = Field(default=6, ge=2)  # unconsolidated messages
     memory_retention_sweep_interval_s: float = Field(default=3600.0, ge=10.0)
+    rl_feedback_limit: int = Field(default=120, ge=1)
+    rl_feedback_window_s: int = Field(default=3600, ge=1)
     rl_memory_write_limit: int = Field(default=120, ge=1)
     rl_memory_write_window_s: int = Field(default=3600, ge=1)
     # LLM: ONE OpenAI-compatible provider; Gemini, OpenRouter (:free), Hugging Face and Groq are

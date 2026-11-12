@@ -9,6 +9,7 @@ from app.services.account_service import AccountService
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
 from app.services.document_service import DocumentService
+from app.services.feedback_service import FeedbackService
 from app.services.memory_service import MemoryService
 from app.services.mfa_service import MfaService
 from app.services.retrieval_service import RetrievalService
@@ -77,3 +78,7 @@ def build_memory_service(session: AsyncSession, infra: Infrastructure) -> Memory
         qdrant=infra.qdrant,
         executor=infra.inference_executor,
     )
+
+
+def build_feedback_service(session: AsyncSession, infra: Infrastructure) -> FeedbackService:
+    return FeedbackService(session=session, settings=infra.settings, limiter=infra.rate_limiter)

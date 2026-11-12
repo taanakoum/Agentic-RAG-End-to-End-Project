@@ -21,10 +21,12 @@ from app.services.factory import (
     build_auth_service,
     build_conversation_service,
     build_document_service,
+    build_feedback_service,
     build_memory_service,
     build_mfa_service,
     build_retrieval_service,
 )
+from app.services.feedback_service import FeedbackService
 from app.services.memory_service import MemoryService
 from app.services.mfa_service import MfaService
 from app.services.retrieval_service import RetrievalService
@@ -64,6 +66,10 @@ def get_memory_service(session: SessionDep, infra: InfraDep) -> MemoryService:
     return build_memory_service(session, infra)
 
 
+def get_feedback_service(session: SessionDep, infra: InfraDep) -> FeedbackService:
+    return build_feedback_service(session, infra)
+
+
 def get_chat_service(infra: InfraDep) -> ChatService:
     return ChatService(infra)
 
@@ -75,6 +81,7 @@ MfaServiceDep = Annotated[MfaService, Depends(get_mfa_service)]
 RetrievalServiceDep = Annotated[RetrievalService, Depends(get_retrieval_service)]
 ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
 MemoryServiceDep = Annotated[MemoryService, Depends(get_memory_service)]
+FeedbackServiceDep = Annotated[FeedbackService, Depends(get_feedback_service)]
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 
 

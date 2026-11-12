@@ -7,6 +7,7 @@ from app.api.v1.routers import (
     auth,
     chat,
     documents,
+    feedback,
     health,
     ingestion,
     memory,
@@ -28,3 +29,4 @@ api_router.include_router(sessions.router)
 api_router.include_router(memory.router)
 api_router.include_router(users.router)
 api_router.include_router(chat.router)
+api_router.include_router(feedback.router)
