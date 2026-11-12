@@ -12,6 +12,7 @@ selects the selector loop there (a no-op elsewhere, and containers run Linux).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -58,31 +59,56 @@ class CheckpointerProvider:
         self._pool: AsyncConnectionPool | None = None  # pyright: ignore[reportMissingTypeArgument]
         self._saver: AsyncPostgresSaver | None = None
         self._lock = asyncio.Lock()
+        self._step = "idle"  # what the first initialisation is doing (for the timeout log)
 
     async def get(self) -> AsyncPostgresSaver:
         if self._saver is not None:
             return self._saver
         async with self._lock:
             if self._saver is None:
-                pool: AsyncConnectionPool = AsyncConnectionPool(  # pyright: ignore[reportMissingTypeArgument]
-                    conninfo(self._settings),
-                    min_size=1,
-                    max_size=self._settings.checkpoint_pool_size,
-                    kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-                    open=False,
-                )
-                await pool.open(wait=True, timeout=self._settings.db_pool_timeout_s)
-                saver = AsyncPostgresSaver(pool)  # pyright: ignore[reportArgumentType]
-                async with pool.connection() as guard:
-                    await guard.execute("SELECT pg_advisory_lock(%s)", (_SETUP_LOCK_KEY,))
-                    try:
-                        await saver.setup()
-                    finally:
-                        await guard.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
-                self._pool, self._saver = pool, saver
-                log.info("checkpointer_ready")
+                try:
+                    await asyncio.wait_for(
+                        self._initialise(), timeout=self._settings.checkpoint_init_timeout_s
+                    )
+                except TimeoutError:
+                    # most likely another backend holds the setup advisory lock (e.g. a killed
+                    # process whose connection PostgreSQL has not yet noticed): fail the turn
+                    # cleanly now; the next request tries again from scratch
+                    log.error("checkpointer_init_timeout", step=self._step)
+                    await self._abandon()
+                    raise
         assert self._saver is not None  # noqa: S101 - narrowing for the type checker
         return self._saver
+
+    async def _initialise(self) -> None:
+        self._step = "open_pool"
+        pool: AsyncConnectionPool = AsyncConnectionPool(  # pyright: ignore[reportMissingTypeArgument]
+            conninfo(self._settings),
+            min_size=1,
+            max_size=self._settings.checkpoint_pool_size,
+            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+            open=False,
+        )
+        self._pool = pool
+        await pool.open(wait=True, timeout=self._settings.db_pool_timeout_s)
+        saver = AsyncPostgresSaver(pool)  # pyright: ignore[reportArgumentType]
+        async with pool.connection() as guard:
+            self._step = "wait_for_setup_lock"
+            await guard.execute("SELECT pg_advisory_lock(%s)", (_SETUP_LOCK_KEY,))
+            try:
+                self._step = "create_tables"
+                await saver.setup()
+            finally:
+                await guard.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
+        self._saver = saver
+        self._step = "ready"
+        log.info("checkpointer_ready")
+
+    async def _abandon(self) -> None:
+        pool, self._pool, self._saver = self._pool, None, None
+        if pool is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(pool.close(), timeout=5)
 
     async def close(self) -> None:
         pool, self._pool, self._saver = self._pool, None, None

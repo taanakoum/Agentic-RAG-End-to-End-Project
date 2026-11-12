@@ -192,6 +192,9 @@ class Settings(BaseSettings):
     rl_session_create_limit: int = Field(default=120, ge=1)
     rl_session_create_window_s: int = Field(default=3600, ge=1)
     checkpoint_pool_size: int = Field(default=10, ge=1, le=100)
+    # the first use of the checkpointer opens a pool and creates tables under an advisory lock;
+    # if anything holds that lock the first chat turn would wait forever, so it is time-bounded
+    checkpoint_init_timeout_s: float = Field(default=30.0, gt=0)
     # Long-term memory
     qdrant_memories_collection: str = "memories"
     # calibrated with the real model (evaluation/reports/memory_threshold.md): 0.60 retrieves
