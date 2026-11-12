@@ -36,6 +36,9 @@ def _upload_box() -> None:
         st.info("You already uploaded this exact file; nothing was processed again.")
     else:
         st.success("Uploaded. It is being processed; this page shows the progress.")
+        # work is in flight now: switch polling on in THIS run (a later full re-run would wipe
+        # the message above)
+        st.session_state["docs_in_flight"] = True
     st.session_state.pop("uploader", None)
 
 
@@ -53,6 +56,7 @@ def _failure(document: dict[str, Any]) -> None:
             except ApiError as exc:
                 state.fail(exc)
             else:
+                st.session_state["docs_in_flight"] = True
                 st.rerun()
     else:
         cols[0].caption("This failure is permanent; fix the file and upload it again.")
@@ -99,6 +103,7 @@ def _row(document: dict[str, Any]) -> None:
                 except ApiError as exc:
                     state.fail(exc)
                 else:
+                    st.session_state["docs_in_flight"] = True
                     st.rerun()
 
 

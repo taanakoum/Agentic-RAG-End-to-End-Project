@@ -18,6 +18,7 @@ import time
 import uuid
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,14 @@ def step(message: str) -> None:
 
 def shoot(page: Page, out: Path, name: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(out / f"{name}.png"), full_page=False)
+    for attempt in range(3):  # headless Chromium occasionally fails a capture: try again
+        try:
+            page.screenshot(path=str(out / f"{name}.png"), full_page=False)
+            break
+        except PlaywrightError:
+            if attempt == 2:
+                raise
+            page.wait_for_timeout(1000)
     step(f"screenshot {name}.png")
 
 
@@ -72,7 +80,7 @@ def tour(url: str, out: Path, question: str, headed: bool, wait_s: int) -> int:
             page.get_by_role("button", name="Upload", exact=True).click()
             expect(
                 page.get_by_text("Uploaded.").or_(page.get_by_text("already uploaded"))
-            ).to_be_visible()
+            ).to_be_visible(timeout=wait_s * 1000)
             step(f"uploaded {path.name}")
         deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline:
@@ -90,7 +98,13 @@ def tour(url: str, out: Path, question: str, headed: bool, wait_s: int) -> int:
         box = page.locator("[data-testid=stChatInput] textarea")
         box.fill(question)
         box.press("Enter")
-        expect(page.get_by_text("Sources (").first).to_be_visible(timeout=wait_s * 1000)
+        try:
+            expect(page.get_by_text("Sources (").first).to_be_visible(timeout=wait_s * 1000)
+        except AssertionError:
+            shoot(page, out, "04-chat-failure")
+            print("FAIL: no answer with sources appeared. The page says:")
+            print("   ", " ".join(page.locator("[data-testid=stMain]").inner_text().split())[:600])
+            return 1
         page.get_by_text("Sources (").first.click()
         page.wait_for_timeout(800)
         shoot(page, out, "03-answer-with-sources")
