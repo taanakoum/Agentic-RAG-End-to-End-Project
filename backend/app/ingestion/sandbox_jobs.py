@@ -15,7 +15,7 @@ import json
 import sys
 from typing import Any
 
-from app.ingestion.textnorm import meaningful_chars, normalize_text
+from app.ingestion.textnorm import meaningful_chars, nfkc, normalize_text
 
 _CONVERTERS: dict[tuple[bool, bool], Any] = {}  # warm-process caches (see serve())
 _CHUNKERS: dict[tuple[str, int], Any] = {}
@@ -221,10 +221,10 @@ def cmd_docling(path: str, opts: dict[str, Any]) -> dict[str, Any]:
         headings = list(chunk.meta.headings or [])
         chunks.append(
             {
-                "text": chunk.text,
-                "contextual": chunker.contextualize(chunk),
+                "text": nfkc(chunk.text),
+                "contextual": nfkc(chunker.contextualize(chunk)),
                 "pages": pages,
-                "headings": headings,
+                "headings": [nfkc(str(h)) for h in headings],
             }
         )
     # HybridChunker only emits chunks for body content; headings are context. Text it recognised
@@ -236,7 +236,7 @@ def cmd_docling(path: str, opts: dict[str, Any]) -> dict[str, Any]:
     for item in document.texts:
         page_no = int(item.prov[0].page_no) if item.prov else 1
         if page_no not in covered and str(item.text).strip():
-            per_page.setdefault(page_no, []).append(str(item.text))
+            per_page.setdefault(page_no, []).append(nfkc(str(item.text)))
     fallback_pages: list[dict[str, Any]] = [
         {"page_number": n, "text": "\n\n".join(parts), "from_ocr": do_ocr and n in needs}
         for n, parts in sorted(per_page.items())

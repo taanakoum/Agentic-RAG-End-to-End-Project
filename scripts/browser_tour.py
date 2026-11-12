@@ -237,6 +237,8 @@ def tour(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    # answers can contain any Unicode (maths symbols from PDFs); Windows consoles are not UTF-8
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )

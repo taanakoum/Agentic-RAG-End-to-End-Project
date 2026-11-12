@@ -330,3 +330,11 @@ def test_ocr_failure_is_reported_not_raised(monkeypatch: pytest.MonkeyPatch) -> 
     )
     assert result["ocr_status"] == "failed"
     assert result["ocr_pages"] == 0
+
+
+def test_pdf_maths_letters_become_plain_letters() -> None:
+    from app.ingestion.textnorm import nfkc
+
+    assert nfkc("a stack of \U0001d441 = 6 identical layers") == "a stack of N = 6 identical layers"
+    assert nfkc("e\ufb03cient\x00") == "efficient"  # ligature and NUL
+    assert nfkc("line one\n\n| a | b |") == "line one\n\n| a | b |"  # layout untouched
