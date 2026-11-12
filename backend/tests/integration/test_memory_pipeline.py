@@ -395,3 +395,29 @@ async def test_deleting_a_conversation_keeps_the_memories_learned_from_it(
     assert (
         kept.content == "The user prefers concise answers." and kept.source_conversation_id is None
     )
+
+
+async def test_background_indexing_does_not_reset_the_retention_clock(
+    client: httpx2.AsyncClient, infra: Infrastructure, runtime: WorkerRuntime
+) -> None:
+    from app.memory.pipeline import index_memory
+
+    user = await new_user(client, "clock@example.com")
+    await enable_memory(client, user, memory_retention_days=30)
+    memory = await add_memory(client, user, "an old fact that is being re-indexed")
+    async with infra.session_factory() as session:
+        await session.execute(
+            text("UPDATE memories SET updated_at = now() - interval '60 days' WHERE id = :i"),
+            {"i": memory["id"]},
+        )
+        await session.commit()
+    user_id = await user_id_of(client, user)
+    outcome = await asyncio.to_thread(index_memory, runtime, uuid.UUID(memory["id"]), user_id)
+    assert outcome == "indexed"
+    with infra.sync_session_factory() as session:
+        age = session.execute(
+            text("SELECT now() - updated_at > interval '59 days' FROM memories WHERE id = :i"),
+            {"i": memory["id"]},
+        ).scalar()
+        assert age is True  # indexing did not count as an edit
+        assert sweep_retention(session) == 1

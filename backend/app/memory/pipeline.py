@@ -59,7 +59,8 @@ def index_memory(rt: WorkerRuntime, memory_id: uuid.UUID, user_id: uuid.UUID) ->
         session.execute(
             update(Memory)
             .where(Memory.id == memory_id, Memory.content_hash == seen_hash, Memory.kind == kind)
-            .values(index_state="indexed")
+            # keep updated_at: background indexing is not an edit and must not reset retention
+            .values(index_state="indexed", updated_at=Memory.updated_at)
         )
         session.commit()
     return "indexed"
@@ -102,7 +103,9 @@ def purge_user_memories(rt: WorkerRuntime, user_id: uuid.UUID) -> str:
                 select(Memory.id).where(Memory.user_id == user_id, Memory.deleted_at.is_(None))
             ).all():
                 session.execute(
-                    update(Memory).where(Memory.id == memory_id).values(index_state="pending")
+                    update(Memory)
+                    .where(Memory.id == memory_id)
+                    .values(index_state="pending", updated_at=Memory.updated_at)
                 )
                 session.add(
                     OutboxEvent(
