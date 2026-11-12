@@ -117,3 +117,6 @@ SSE events (JSON `data:` per frame, `event:` = `type`): `start{session_id, execu
 | DELETE | /feedback/{message_id} | | 204, idempotent (also when there was none or it is not the caller's) | 401, 403, 422 |
 
 Note: `agent_config.mode` only accepts `single` (ADR-028); the "Sessions" row above that mentions `multi` is historical.
+
+## Outages and headers (Phase 10)
+A request that fails only because PostgreSQL, Redis or Qdrant cannot be reached returns 503 `SERVICE_UNAVAILABLE` (timeouts: 504 `UPSTREAM_TIMEOUT`) with `Retry-After: 5`, the standard error body and no technical detail. Every response carries `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Cache-Control: no-store` (unless the endpoint sets its own) and a deny-all `Content-Security-Policy` (not on `/docs`); production adds `Strict-Transport-Security`.

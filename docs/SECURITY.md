@@ -99,3 +99,9 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - Backend error bodies are never shown raw: non-JSON or unknown responses are classified as "unexpected response"; known codes get fixed wording plus the request id as a support reference.
 - Feedback: owner-only, assistant messages of live conversations only, identical 404 otherwise, per-user rate limit, comment capped and trimmed, stored as plain text in PostgreSQL (comments are user content: excluded from traces like every other user text).
 - Limits: no CSRF concern (no cookies, bearer tokens only), but Streamlit itself and the API must be served over HTTPS in deployment; no content-security policy is set by Streamlit's default server.
+
+## Hardening added in Phase 10
+- Response headers on every response (including 401/404/405/413/422): nosniff, no-referrer, frame denial, `no-store`, a deny-all CSP (except the dev-only `/docs`), HSTS in production only. Tested for each response kind and with mutations.
+- CORS: off by default; with `CORS_ORIGINS` set, only the listed origins get `Access-Control-Allow-Origin` (never `*`), also for preflight. Tested.
+- Dependency outages never leak internals: the 503/504 body is fixed text plus a request id (tested for PostgreSQL, Qdrant and Redis outages across auth, documents, sessions, memory, feedback, search and chat).
+- Not covered: a content-security policy for the Streamlit server itself (Streamlit's own defaults apply), WAF/DDoS protection (deployment concern), dependency scanning beyond the one-off `pip-audit` of 2026-11-12 (no known vulnerabilities; not automated in CI).

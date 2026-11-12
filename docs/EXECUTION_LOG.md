@@ -225,3 +225,19 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Gate G8 ("real frontend-to-backend workflows pass; cannot see other users' data by manipulating state"): the workflows pass through the real script and real HTTP; manipulation tests at UI and API level pass. NOT verified in a real browser (KI-042).
 - Not done / blocked: real-browser check; Docker (KI-014); MFA setup / verification / reset / deletion screens (KI-044).
 - Usage: could not be measured.
+
+---
+## Entry 15: Phase 10 test + harden (gate G9 without the Docker smoke test)
+- Date: 2026-11-12. Branch feature/phase-6-single-agent. Commits 55fca54, the loop-lag test commit and the closing commit that follows this entry.
+- Audit of the spec checklist (docs/spec/07) against the suite found real gaps, all closed: (1) PostgreSQL/Redis/Qdrant outages were not tested and a PostgreSQL outage escaped as an unhandled exception (a 500) -> `core/dependency_errors.py` (503/504 + Retry-After, no detail) + `test_outages.py`; (2) the API sent no security response headers and CORS was untested -> `SecurityHeadersMiddleware` + `test_http_hardening.py`; (3) no one-command-per-category -> markers in `backend/tests/conftest.py` + `scripts/test.ps1`; (4) pyright strict only covered `backend` and `frontend` -> now also `evaluation` and `load_testing` (56 errors fixed, only rule-named narrow ignores); (5) a one-off dependency audit.
+- Commands and ACTUAL results (after the last code change):
+  - `scripts/test.ps1 -Category quality` -> `ruff format --check` 249 files formatted, `ruff check` passed, `pyright` 0 errors (243 files), migrations upgrade/downgrade/upgrade 4 passed.
+  - Complete suite `uv run --no-sync pytest backend/tests -q` (including docling and real_model tests) -> 1090 passed, 1 skipped (the real_llm test, needs a key), 0 failed, 1471 s. Category sizes: unit 528, integration 557, e2e 91, security 268, concurrency 61, failure 99, frontend 46.
+  - Earlier full runs of this phase: 1080 passed + 1 failed (the loop-responsiveness test) and 1075 passed (docling deselected); see KI-045 for that flaky timing test: tolerance changed from "at most 1 stall over 100 ms" to "at most 2 over 150 ms"; the blocking-Argon2 mutant still failed it in 3 of 3 runs (3-4 stalls, up to 592 ms), restored code passed 3 of 3. The margin is thin.
+  - Mutation checks (each made tests FAIL, then restored): removing the dependency handlers -> `test_outages` fails; overriding an endpoint's own `Cache-Control` -> the SSE test fails; HSTS always on -> the header test fails; blocking Argon2 on the loop -> loop test fails.
+  - `uvx pip-audit` on the locked dependencies (`uv export --no-hashes --no-emit-project`) -> "No known vulnerabilities found" (one-off, advisory state of 2026-11-12).
+  - Suppression audit: 29 `noqa`, 9 `type: ignore`, 62 `pyright: ignore`, none bare, no file-level disables.
+- Findings fixed: PostgreSQL outage was an unhandled exception; no defensive headers. Findings documented: KI-045 (flaky timing test), KI-046 (no line-coverage numbers).
+- Gate G9 ("all relevant suites pass, no blanket suppressions"): suites pass, no blanket suppressions. The "Docker smoke" part of the phase cannot run here (KI-014); G9's concurrency part feeds G10 (Phase 11).
+- Not done / blocked: Docker smoke test; coverage numbers; automated dependency scanning in CI.
+- Usage: could not be measured.
