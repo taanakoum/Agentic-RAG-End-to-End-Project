@@ -50,29 +50,39 @@ uv run --no-sync python scripts/trace_viewer.py --request-id 6beaae   # from the
 uv run --no-sync python scripts/trace_viewer.py --slow 2000    # only traces slower than 2 s
 ```
 
-Example (shortened) of a question:
+Real output from this project (one question, real model; ids shortened):
 
 ```
-trace 3fa9c1...   3412.7 ms  27 spans  request_id=6beaae...
-  POST /api/v1/chat/stream  3412.7 ms  (agentic-rag-api)  app.request_id=6beaae...
-    chat.turn  3401.2 ms
-      agent.classify  0.4 ms  agent.route=kb
-      agent.retrieve  2310.5 ms
-        retrieval.search  2298.1 ms  retrieval.mode=hybrid_rerank
-      agent.generate  1021.9 ms
-        llm.call  1019.3 ms  llm.model=gemini-3.5-flash-lite  llm.cache=miss
-      agent.check_output  4.0 ms
-      agent.persist  18.6 ms
+trace fa02e75...   5512.6 ms  26 spans  request_id=0e382ef...
+  POST /api/v1/chat  5512.6 ms  (agentic-rag-api)  http.status_code=200
+    chat.turn  5410.8 ms
+      agent.retrieve  3637.4 ms
+        retrieval.search  3618.8 ms
+          retrieval.rerank  3057.9 ms
+      agent.generate  1494.8 ms
+        llm.call  1492.2 ms  llm.model=gemini-3.5-flash-lite  llm.cache=miss
+      agent.check_output  12.6 ms
+      agent.persist  14.0 ms
 ```
 
-An upload shows the *same trace* crossing into the worker: `POST /documents/upload` -> ...
-`task.process_document` -> `ingestion.parse` / `ingestion.embed` / `ingestion.index`
-(service `agentic-rag-worker`). Failed spans are marked `[ERROR]` with only the exception *type*.
+and an upload, which continues into the background worker (the same trace):
+
+```
+trace 3759520...   25774.9 ms  16 spans
+  POST /api/v1/documents/upload  695.8 ms  (agentic-rag-api)  http.status_code=202
+    task.process_document  25085.8 ms  job.outcome=completed
+      ingestion.parse  24334.6 ms  ingestion.pages=3  ingestion.parser=docling
+      ingestion.embed  629.9 ms
+      ingestion.index  40.1 ms
+```
+
+(The first PDF after a start spends most of its time loading Docling; the re-ranker dominates a
+question on a CPU, see KI-023.) Failed spans are marked `[ERROR]` with only the exception *type*.
 
 **3. A trace UI.** Any OTLP/HTTP receiver works. Two free options:
 
 - *Arize Phoenix* (own virtual environment, not part of this project's dependencies):
-  `uvx --from arize-phoenix phoenix serve` -> UI at http://127.0.0.1:6006, then
+  `uvx --python 3.12 --from arize-phoenix phoenix serve` -> UI at http://127.0.0.1:6006 (verified with Phoenix 21.0.0), then
   `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:6006` in `.env`.
 - *Any OpenTelemetry Collector / Grafana Tempo / Jaeger*: point `OTEL_EXPORTER_OTLP_ENDPOINT` at its
   OTLP/HTTP port (4318) (`/v1/traces` is appended).

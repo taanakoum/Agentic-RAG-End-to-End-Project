@@ -15,6 +15,20 @@ for the language model.
 
 ---
 
+## Screenshots
+
+Taken from the running application in a real browser (`scripts/browser_tour.py`, sample documents from
+[examples/](examples/QUESTIONS.md)).
+
+| | |
+|---|---|
+| ![Answer with verified sources](docs/images/03-answer-with-sources.png) | ![Documents ready](docs/images/02-documents-ready.png) |
+| *A cited answer: the excerpt behind [1] was verified against the stored document text* | *Uploaded documents moving to Ready (live status)* |
+| ![Memory](docs/images/04-memory.png) | ![Account](docs/images/05-account.png) |
+| *Opt-in long-term memory* | *Devices, two-factor authentication, password, account deletion* |
+
+---
+
 ## A realistic use case
 
 **Internal policy and contract assistant for a 200-person company.** The legal, HR and compliance
