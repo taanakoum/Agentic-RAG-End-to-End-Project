@@ -11,15 +11,18 @@ Privacy rules, enforced in code and tested:
   * library instrumentation is configured not to capture statements or arguments (Redis queries
     are sanitised), and a test scans every span of a full chat turn for private strings.
 Export is OFF unless `OTEL_ENABLED=true` (then OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT`, which
-Arize Phoenix, Langfuse and any OTLP collector accept). When off, the API is a no-op.
+Arize Phoenix, Langfuse and any OTLP collector accept, and/or one JSON line per span appended to
+`OTEL_TRACES_FILE`, readable with scripts/trace_viewer.py). When off, the API is a no-op.
 """
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from opentelemetry import context as otel_context
@@ -27,12 +30,17 @@ from opentelemetry import metrics, propagate, trace
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
-from app.core.config import Settings
+from app.core.config import REPO_ROOT, Settings
 
 INSTRUMENTATION = "agentic_rag"
 MAX_VALUE_CHARS = 200
@@ -54,6 +62,37 @@ _VALUE_PATTERNS = (
 )
 REDACTED = "[redacted]"
 _state: dict[str, Any] = {"configured": False, "provider": None}
+
+
+class JsonlSpanExporter(SpanExporter):
+    """Appends every finished span as one JSON line (the API and the worker share one file).
+
+    The file is opened per export, so several processes can append to it; a line is a complete
+    span (already privacy-filtered when it was created), so the file can be shared as is.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        with contextlib.suppress(OSError):  # export() reports a bad path; it must not stop startup
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        if not spans:
+            return SpanExportResult.SUCCESS
+        try:
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write("".join(span.to_json(indent=None) + "\n" for span in spans))
+        except OSError:  # observability must never break a request
+            return SpanExportResult.FAILURE
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self) -> None:
+        return None
+
+
+def traces_path(configured: str) -> Path:
+    path = Path(configured)
+    return path if path.is_absolute() else REPO_ROOT / path
 
 
 def _redact_value(value: str) -> str:
@@ -206,7 +245,9 @@ def setup_telemetry(
     if _state["configured"]:
         return bool(_state["provider"])
     _state["configured"] = True
-    wants_export = settings.otel_enabled and bool(settings.otel_exporter_otlp_endpoint)
+    wants_export = settings.otel_enabled and bool(
+        settings.otel_exporter_otlp_endpoint or settings.otel_traces_file
+    )
     if span_exporter is None and not wants_export:
         return False
     resource = Resource.create(
@@ -221,7 +262,11 @@ def setup_telemetry(
     )
     if span_exporter is not None:
         provider.add_span_processor(SimpleSpanProcessor(span_exporter))
-    else:
+    if span_exporter is None and settings.otel_traces_file:
+        provider.add_span_processor(
+            SimpleSpanProcessor(JsonlSpanExporter(traces_path(settings.otel_traces_file)))
+        )
+    if span_exporter is None and settings.otel_exporter_otlp_endpoint:
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
         endpoint = settings.otel_exporter_otlp_endpoint.rstrip("/")
@@ -235,7 +280,7 @@ def setup_telemetry(
     readers: list[MetricReader] = []
     if metric_reader is not None:
         readers.append(metric_reader)
-    elif wants_export and settings.otel_metrics_enabled:
+    elif wants_export and settings.otel_metrics_enabled and settings.otel_exporter_otlp_endpoint:
         from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 
         endpoint = settings.otel_exporter_otlp_endpoint.rstrip("/")

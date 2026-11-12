@@ -238,6 +238,9 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     otel_exporter_otlp_endpoint: str = ""  # e.g. http://127.0.0.1:6006 (Phoenix) or a collector
     otel_exporter_otlp_headers: dict[str, str] = Field(default_factory=dict[str, str])
+    # also (or only) write every finished span as one JSON line to this file (read it with
+    # scripts/trace_viewer.py); relative paths are relative to the repository root
+    otel_traces_file: str = ""
     otel_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
     otel_metrics_enabled: bool = False
     otel_instrument_libraries: bool = True

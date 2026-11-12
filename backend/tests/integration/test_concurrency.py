@@ -90,8 +90,8 @@ async def test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_r
     ]
     # No blocking call on the loop. One slow sample can be a GC pause or the OS scheduler on a busy
     # machine, but a blocking call shows up as MANY long stalls (one per blocked hash): count them.
-    # A blocked hash is ~100+ ms EACH, so blocking Argon2 on the loop gave 4 stalls (max 264 ms) in a
-    # mutation check; a busy full-suite run produces at most one or two scheduler/GC stalls.
+    # A blocked hash is ~100+ ms EACH: blocking Argon2 on the loop gave 3-4 stalls (up to 592 ms)
+    # in mutation checks; a busy full-suite run produces at most one or two scheduler/GC stalls.
     long_stalls = sorted((lag_s for lag_s in lag.samples if lag_s > 0.15), reverse=True)
     assert len(long_stalls) <= 2, (
         f"{len(long_stalls)} event-loop stalls over 150 ms: "
