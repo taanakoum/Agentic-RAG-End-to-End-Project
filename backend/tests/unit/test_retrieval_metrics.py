@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import pytest
+
 from evaluation.retrieval.metrics import (
     hit_at_k,
     ndcg_at_k,

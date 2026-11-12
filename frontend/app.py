@@ -1,0 +1,38 @@
+"""Streamlit entry point:  streamlit run frontend/app.py
+
+The app talks ONLY to the FastAPI backend (FRONTEND_API_URL). It has no database, vector store or
+model access, and the backend decides everything that matters (ownership, validation, limits).
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+
+from frontend import state
+from frontend.views import account, auth, chat, documents, memory
+
+SECTIONS = {
+    "Chat": chat.render,
+    "Documents": documents.render,
+    "Memory": memory.render,
+    "Account": account.render,
+}
+
+
+def main() -> None:
+    st.set_page_config(page_title="Agentic RAG", page_icon="📚", layout="wide")
+    if not state.api().signed_in or state.user() is None:
+        auth.render()
+        return
+    me = state.user() or {}
+    with st.sidebar:
+        st.markdown(f"Signed in as **{me.get('display_name') or me.get('email', '')}**")
+        section = st.radio("Go to", list(SECTIONS), key="section", label_visibility="collapsed")
+        if st.button("Sign out", key="sign_out"):
+            state.sign_out("You have been signed out.")
+            st.rerun()
+        st.divider()
+    SECTIONS[section]()
+
+
+main()

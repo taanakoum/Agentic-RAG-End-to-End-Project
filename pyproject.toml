@@ -47,6 +47,11 @@ dependencies = [
     "opentelemetry-instrumentation-celery>=0.66b2",
 ]
 
+[project.optional-dependencies]
+frontend = [
+    "streamlit==1.67.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest==9.2.0",
@@ -90,7 +95,7 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["backend"]
+src = ["backend", "."]
 extend-exclude = ["backend/migrations/versions", ".claude", "docs"]
 
 [tool.ruff.lint]
@@ -102,8 +107,8 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF"]
 "backend/tests/**" = ["S101", "S105", "S106", "RUF001"]  # asserts, fake secrets, intentional Unicode inputs
 
 [tool.pyright]
-include = ["backend"]
+include = ["backend", "frontend"]
 exclude = ["backend/migrations/versions"]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
-extraPaths = ["backend"]
+extraPaths = ["backend", "."]
