@@ -41,3 +41,6 @@ evaluation/.cache/
 Thumbs.db
 desktop.ini
 node_modules/
+
+# ---------------------------------------------------------------- Celery beat state (created by scripts/stack.py)
+celerybeat-schedule*
