@@ -87,3 +87,8 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - API keys: `LLM_API_KEY` is a `SecretStr`, never logged or echoed; provider error bodies are never returned to users; the test suite blanks all `LLM_*` variables so a key in `.env` can never be used by tests.
 - Redis cache entries contain answers derived from a user's documents: per-user namespace (hashed user id), expiry, size cap, purge on account deletion, fail-open.
 - Abuse limits: per-user chat rate limit (fails closed), per-user and process-wide model concurrency with bounded waiting, total model deadline, bounded repair attempts (at most 1 + `LLM_REPAIR_ATTEMPTS` answer calls and one rewrite call per turn).
+
+## Telemetry (Phase 8)
+- Traces and metrics contain no user content: no prompts, answers, questions, passages, quotes, file names, e-mails, tokens or memories; the user id is hashed; exception messages are never recorded (type only); SQL parameters, HTTP headers and bodies are not captured; Redis commands are sanitized. Enforced by `safe_attributes` and tested by scanning all exported spans after a chat turn and an upload (`tests/integration/test_observability.py`).
+- Export is opt-in (`OTEL_ENABLED` + endpoint); `OTEL_EXPORTER_OTLP_HEADERS` (an auth header) lives in `.env` only. Use TLS to a remote collector. Trace ids are returned in `X-Trace-Id` and are not secrets, but they are not authorization either.
+- Never paste a real key into a test sample: redaction tests use made-up keys (a real-looking key found in a test was replaced on 2026-11-12, see log entry 13).
