@@ -86,21 +86,20 @@ def kill_tree(pid: int) -> None:
 def spawn(name: str, args: list[str], env: dict[str, str]) -> int:
     LOGS.mkdir(parents=True, exist_ok=True)
     log = (LOGS / f"{name}.log").open("ab")
-    kwargs: dict[str, object] = {}
-    if WINDOWS:
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    else:
-        kwargs["start_new_session"] = True
-    process = subprocess.Popen(  # noqa: S603  (our own commands)
-        args,
-        cwd=ROOT,
-        env=env,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        **kwargs,  # type: ignore[arg-type]
-    )
-    return process.pid
+    common: dict[str, object] = {
+        "cwd": ROOT,
+        "env": env,
+        "stdout": log,
+        "stderr": subprocess.STDOUT,
+        "stdin": subprocess.DEVNULL,
+    }
+    if not WINDOWS:
+        return subprocess.Popen(args, start_new_session=True, **common).pid  # type: ignore[call-overload]  # noqa: S603
+    # Windows: a hidden console of its own, in its own process group. (DETACHED_PROCESS looked
+    # right but the children then died with STATUS_CONTROL_C_EXIT as soon as the launcher's console
+    # went away; this combination keeps them running after `stack.py start` returns.)
+    flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    return subprocess.Popen(args, creationflags=flags, **common).pid  # type: ignore[call-overload]  # noqa: S603
 
 
 def wait_for(what: str, check: object, seconds: int) -> bool:
