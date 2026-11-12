@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 11 (Load, gate G10). Phases 2, 3, 4, 5, 6, 8, 9 and 10 VERIFIED natively (Phase 6 also against a live free Gemini model; Phase 7 REMOVED; Phase 9 without a real browser, KI-042; Phase 10 without the Docker smoke test). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
-**Next step:** (a) User rotates the Gemini key and decides how to handle local commit a555334 before any push (KI-040); opens the UI once in a browser (docs/FRONTEND.md, KI-042); installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1` (also closes the Docker smoke test of Phase 10). (b) Phase 11: read docs/spec/07 (Load testing) and docs/spec/09 (G10); existing `load_testing/concurrency_bench.py`; run Locust (free) against a running API + worker at 1/10/25/50 users with the scripted/limited model (never spend the free-tier quota on load), record hardware and real numbers, fix the bottlenecks found. Start services first (`scripts/dev_services.ps1 start`).
+**Current phase:** 11 (Load, gate G10) is PAUSED by the user; the repository was prepared for publication instead (log entry 16). Phases 2, 3, 4, 5, 6, 8, 9 and 10 VERIFIED natively (Phase 6 also against a live free Gemini model; Phase 7 REMOVED; Phase 9 also in a real headless browser; Phase 10 without the Docker smoke test). Phase 1 TESTED natively; G1 BLOCKED on Docker.
+**Next step:** (a) Actions for the user are in docs/KNOWN_ISSUES.md section 1 (rotate the key, WSL2/Docker, licence, `.env.example`, provider choice). (b) Resume Phase 11: read docs/spec/07 (Load testing) and docs/spec/09 (G10); Locust is installed and pinned; write a fake OpenAI-compatible model server (so no quota is spent), a Locust file, a resource sampler and a level runner; run 1/10/25/50 users with `scripts/stack.py` on the dev machine, record hardware and real numbers, fix the bottlenecks found. Phase 12 is Docker + deployment (needs A2).
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -19,7 +19,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | 6 Single-agent | G6 | VERIFIED (scripted-model suite + live Gemini free tier) | Log entries 11, 12; ADR-026/027 |
 | 7 Multi-agent | G7 | REMOVED (user decision 2026-11-11; single agent only) | ADR-028 |
 | 8 Eval + Observability | - | VERIFIED (native; OTLP verified against a local receiver only, KI-037) | Log entry 13; ADR-030; docs/EVALUATION.md, docs/OBSERVABILITY.md |
-| 9 Frontend | G8 | VERIFIED (AppTest + live backend; no real browser, KI-042) | Log entry 14; ADR-031; docs/FRONTEND.md |
+| 9 Frontend | G8 | VERIFIED (AppTest + live backend + real headless browser) | Log entries 14, 16; ADR-031, ADR-033; docs/FRONTEND.md |
 | 10 Test + Harden | G9 | VERIFIED (native; Docker smoke test BLOCKED, KI-014) | Log entry 15; ADR-032; docs/TESTING_STRATEGY.md |
 | 11 Load | G10 | NOT_STARTED | |
 | 12 Docker + Deploy | G11, G12 | NOT_STARTED | |

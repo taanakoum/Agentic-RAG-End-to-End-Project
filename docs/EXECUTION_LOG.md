@@ -241,3 +241,13 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Gate G9 ("all relevant suites pass, no blanket suppressions"): suites pass, no blanket suppressions. The "Docker smoke" part of the phase cannot run here (KI-014); G9's concurrency part feeds G10 (Phase 11).
 - Not done / blocked: Docker smoke test; coverage numbers; automated dependency scanning in CI.
 - Usage: could not be measured.
+
+---
+## Entry 16: Publication readiness, local run tooling, real-browser verification, known issues review
+- Date: 2026-11-12/13. Branch feature/phase-6-single-agent. Phase 11 (load testing) is PAUSED at the user's request (only the Locust pin was added). Commits are made per fix: 4e14b7e, d158699, 554ded2, 8b139c1, 3c2d971, dbcd8bc, 2a57e75, 7497f96, e729ed4, 0264c36, 4b4a9bc, 6afb53e and the closing commits.
+- User requests handled: explain how the LangGraph loop works and update ARCHITECTURE.md (rewritten with diagrams of the graph and of a turn); explain how to observe telemetry (docs/OBSERVABILITY.md, trace file and viewer); review KNOWN_ISSUES (resolved removed, partial ones closed or folded, actions for the user listed with steps); tidy the repository for publication (gitignore, untracked local tooling, README, LOCAL_SETUP, examples, scripts); a private guide for the user (`private/MY_GUIDE.md`, gitignored) and an environment that works (venv at the user's devtools path, `uv sync --extra frontend`).
+- Fixed this session (each with tests where applicable): earlier ratings shown on reopen (KI-043); MFA/e-mail/reset/delete screens (KI-044); non-token 401 no longer signs out; checkpoint pruning (KI-029); time-bounded checkpointer init; Windows server event loop; stack.py process survival; document polling and upload notice; "1 pages" wording.
+- Verified with real tools: the whole stack ran on the dev database (migrations, API, worker, beat, UI); a headless Chromium tour (register, 4 uploads, answer with verified citation, memory, account) passed; the OTLP export reached Arize Phoenix 21 (200 spans, hierarchy intact, no private attributes); `pip-audit` clean (2026-11-12); real traces rendered with the viewer.
+- Commands and ACTUAL results: `ruff format/check` and `pyright` (strict; backend, frontend, evaluation, load_testing, scripts) clean after the last change; full suite with coverage: {{SUITE}}.
+- Not done: Phase 11 (paused); Docker (KI-014); Langfuse verification; history rewrite for the old key (needs the user's decision, KI-040).
+- Usage: could not be measured.
