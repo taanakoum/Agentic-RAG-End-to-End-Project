@@ -43,6 +43,18 @@ _MESSAGES: dict[str, tuple[Kind, str, bool]] = {
         False,
     ),
     "INVALID_MFA_CODE": ("credentials", "That verification code is not correct.", False),
+    "INVALID_RESET_TOKEN": (
+        "input",
+        "That reset link is invalid or has expired. Request a new one.",
+        False,
+    ),
+    "INVALID_VERIFICATION_TOKEN": (
+        "input",
+        "That verification code is invalid or has expired. Request a new one.",
+        False,
+    ),
+    "MFA_ALREADY_ENABLED": ("conflict", "Two-factor authentication is already on.", False),
+    "MFA_NOT_PENDING": ("conflict", "Start the two-factor setup again.", False),
     "INVALID_MFA_TOKEN": ("auth", "The sign-in took too long. Please start again.", False),
     "SESSION_REVOKED": ("auth", "This session was ended. Please sign in again.", False),
     "INVALID_TOKEN": ("auth", "Your session has expired. Please sign in again.", False),

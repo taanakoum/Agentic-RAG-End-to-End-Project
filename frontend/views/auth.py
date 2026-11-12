@@ -44,6 +44,39 @@ def _sign_in_form() -> None:
     _finish_login()
 
 
+def _forgot_password() -> None:
+    with st.expander("Forgot your password?"):
+        with st.form("forgot", clear_on_submit=False):
+            email = st.text_input("Your email", key="forgot_email")
+            asked = st.form_submit_button("Email me a reset code")
+        if asked:
+            if not (email or "").strip():
+                st.error("Please enter your email.")
+            else:
+                try:
+                    state.api().forgot_password(email.strip())
+                except ApiError as exc:
+                    state.show(describe(exc))
+                else:  # the same message whether or not the account exists
+                    st.info("If that account exists, a reset code was sent.")
+        with st.form("reset", clear_on_submit=True):
+            token = st.text_input("Reset code from the email", key="reset_token")
+            new = st.text_input("New password", type="password", key="reset_password")
+            done = st.form_submit_button("Set the new password")
+        if done:
+            if not (token or "").strip() or not new:
+                st.error("Enter the code and the new password.")
+                return
+            try:
+                state.api().reset_password(token.strip(), new)
+            except ApiError as exc:
+                presentation = describe(exc)
+                state.show(presentation)
+                state.field_error(presentation, "new_password")
+            else:
+                st.success("Password changed. You can sign in now.")
+
+
 def _mfa_form() -> None:
     st.info("Enter the 6-digit code from your authenticator app, or a recovery code.")
     with st.form("mfa"):
@@ -116,5 +149,6 @@ def render() -> None:
     sign_in, register = st.tabs(["Sign in", "Create account"])
     with sign_in:
         _sign_in_form()
+        _forgot_password()
     with register:
         _register_form()

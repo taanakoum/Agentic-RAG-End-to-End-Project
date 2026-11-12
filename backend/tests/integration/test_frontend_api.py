@@ -251,3 +251,17 @@ def test_one_user_can_never_reach_another_users_data_whatever_the_client_state(
     assert alice.list_sessions()["items"][0]["title"] == "private"
     assert alice.get_document(document["id"])["status"] == "completed"
     assert get_settings().app_env == "test"
+
+
+def test_a_401_that_is_not_about_the_token_does_not_end_the_session(backend: LiveBackend) -> None:
+    client = signed_in(backend, "alice@example.com")
+    client.mfa_setup()
+    with pytest.raises(ApiError) as wrong:
+        client.mfa_confirm("000000")  # the backend answers 401 INVALID_MFA_CODE
+    assert wrong.value.status == 401 and wrong.value.code == "INVALID_MFA_CODE"
+    assert not isinstance(wrong.value, SessionExpired)
+    assert client.signed_in and client.me()["email"] == "alice@example.com"  # still signed in
+    before = client.tokens
+    with pytest.raises(ApiError):
+        client.change_password("not-my-password", "Another-Long-Passphrase-9!")
+    assert client.signed_in and client.tokens == before  # and no needless token rotation

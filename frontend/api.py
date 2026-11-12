@@ -84,6 +84,19 @@ def _error_from(response: httpx.Response) -> ApiError:
         )
 
 
+# A 401 normally means the access token is bad; but the backend also answers 401 for a wrong
+# second-factor code or password. Only token problems may end the session or trigger a refresh.
+TOKEN_PROBLEMS = frozenset(
+    {"INVALID_TOKEN", "SESSION_REVOKED", "AUTHENTICATION_REQUIRED", "AUTHENTICATION_FAILED"}
+)
+
+
+def token_problem(response: httpx.Response) -> bool:
+    if response.status_code != 401:
+        return False
+    return _error_from(response).code in TOKEN_PROBLEMS | {"UNEXPECTED_RESPONSE"}
+
+
 def iter_sse(lines: Iterable[str]) -> Iterator[JSON]:
     """Decode server-sent events (`event:`/`data:` frames, `:` comments are keep-alives)."""
     data: list[str] = []
@@ -183,12 +196,12 @@ class ApiClient:
             )
         stale = self.tokens.access if self.tokens else ""
         response = self._send(method, path, auth=auth, timeout=timeout, headers=headers, **kwargs)
-        if response.status_code == 401 and auth:
+        if auth and token_problem(response):
             if self._refresh(stale):
                 response = self._send(
                     method, path, auth=auth, timeout=timeout, headers=headers, **kwargs
                 )
-            if response.status_code == 401:
+            if token_problem(response):
                 self.tokens = None
                 error = _error_from(response)
                 raise SessionExpired(
@@ -251,6 +264,43 @@ class ApiClient:
         self.request(
             "POST", "/auth/password/change", json={"current_password": current, "new_password": new}
         )
+
+    def forgot_password(self, email: str) -> None:
+        """Looks successful whatever the account state (the server never reveals it)."""
+        self.request("POST", "/auth/password/forgot", auth=False, json={"email": email})
+
+    def reset_password(self, token: str, new_password: str) -> None:
+        self.request(
+            "POST",
+            "/auth/password/reset",
+            auth=False,
+            json={"token": token, "new_password": new_password},
+        )
+
+    def request_email_verification(self) -> None:
+        self.request("POST", "/auth/email/verify/request")
+
+    def verify_email(self, token: str) -> None:
+        self.request("POST", "/auth/email/verify", json={"token": token})
+
+    def mfa_status(self) -> JSON:
+        return self._json("GET", "/auth/mfa/status")
+
+    def mfa_setup(self) -> JSON:
+        return self._json("POST", "/auth/mfa/setup")
+
+    def mfa_confirm(self, code: str) -> list[str]:
+        body = self._json("POST", "/auth/mfa/confirm", json={"code": code})
+        return [str(c) for c in body["recovery_codes"]]
+
+    def mfa_disable(self, password: str, code: str) -> None:
+        self.request("POST", "/auth/mfa/disable", json={"password": password, "code": code})
+
+    def delete_account(self, password: str, code: str | None = None) -> None:
+        body: JSON = {"password": password}
+        if code:
+            body["code"] = code
+        self.request("DELETE", "/auth/account", json=body)
 
     # ------------------------------------------------------------------ conversations
 

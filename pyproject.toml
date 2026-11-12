@@ -49,6 +49,7 @@ dependencies = [
 
 [project.optional-dependencies]
 frontend = [
+    "segno==1.6.6",
     "streamlit==1.67.0",
 ]
 
@@ -63,6 +64,8 @@ dev = [
     "aiosmtpd==1.4.6",
     "types-boto3[s3]==1.43.126",
     "moto[s3,server]==5.2.5",
+    "locust==2.47.0",
+    "pytest-cov==7.1.0",
 ]
 
 [tool.uv]
@@ -112,8 +115,11 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF"]
 "backend/tests/**" = ["S101", "S105", "S106", "RUF001"]  # asserts, fake secrets, intentional Unicode inputs
 
 [tool.pyright]
-include = ["backend", "frontend", "evaluation", "load_testing"]
-exclude = ["backend/migrations/versions"]
+include = ["backend", "frontend", "evaluation", "load_testing", "scripts"]
+exclude = [
+    "backend/migrations/versions",
+    "scripts/browser_tour.py",  # needs Playwright, which is deliberately not a project dependency
+]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
 extraPaths = ["backend", "."]
