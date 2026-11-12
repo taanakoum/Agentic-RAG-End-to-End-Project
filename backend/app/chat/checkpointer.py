@@ -35,6 +35,18 @@ def use_selector_loop() -> None:
         )
 
 
+def selector_event_loop() -> asyncio.AbstractEventLoop:
+    """An event loop psycopg's async mode can use on every platform.
+
+    uvicorn (0.54) creates a ProactorEventLoop on Windows whatever the event-loop POLICY says, and
+    psycopg refuses to run async on it, so the LangGraph checkpointer (and therefore every chat
+    turn) fails on a real Windows server although the tests (which set the policy) pass. Start the
+    server with:  uvicorn app.main:app --loop app.chat.checkpointer:selector_event_loop
+    (scripts/stack.py does this on Windows; Linux containers are unaffected).
+    """
+    return asyncio.SelectorEventLoop()
+
+
 def conninfo(settings: Settings) -> str:
     url = settings.database_url(driver="psycopg").set(drivername="postgresql")
     return url.render_as_string(hide_password=False)

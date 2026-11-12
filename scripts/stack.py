@@ -168,6 +168,9 @@ def start(args: argparse.Namespace) -> int:
             "127.0.0.1",
             "--port",
             str(args.api_port),
+            # psycopg async (LangGraph checkpoints) cannot use the Proactor loop uvicorn picks on
+            # Windows; see app.chat.checkpointer.selector_event_loop
+            *(["--loop", "app.chat.checkpointer:selector_event_loop"] if WINDOWS else []),
         ],
         "worker": [
             python,
