@@ -55,7 +55,7 @@ def tour(url: str, out: Path, question: str, headed: bool, wait_s: int) -> int:
         print("2. register")
         page.get_by_role("tab", name="Create account").click()
         panel = page.locator("[role=tabpanel]:visible")
-        panel.get_by_label("Email").fill(email)
+        panel.get_by_label("Email", exact=True).fill(email)
         panel.get_by_label("Password", exact=True).fill(PASSWORD)
         panel.get_by_label("Repeat password").fill(PASSWORD)
         panel.get_by_role("button", name="Create account").click()
@@ -67,8 +67,12 @@ def tour(url: str, out: Path, question: str, headed: bool, wait_s: int) -> int:
         files = sorted(SAMPLES.iterdir())
         for path in files:
             page.locator("input[type=file]").set_input_files(str(path))
+            # Streamlit receives the file asynchronously: wait until the app echoes it
+            expect(page.get_by_text(f"{path.name}: ")).to_be_visible()
             page.get_by_role("button", name="Upload", exact=True).click()
-            expect(page.get_by_text(path.name).first).to_be_visible()
+            expect(
+                page.get_by_text("Uploaded.").or_(page.get_by_text("already uploaded"))
+            ).to_be_visible()
             step(f"uploaded {path.name}")
         deadline = time.monotonic() + wait_s
         while time.monotonic() < deadline:

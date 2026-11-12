@@ -12,6 +12,7 @@ from frontend.format import (
     citation_line,
     has_work_in_flight,
     human_size,
+    plural,
     preview_title,
     status_label,
 )
@@ -103,6 +104,11 @@ def test_a_non_json_error_body_is_never_shown_to_the_user() -> None:
 def test_formatting_helpers() -> None:
     assert human_size(512) == "512 B" and human_size(1536) == "1.5 KB"
     assert human_size(5 * 1024 * 1024) == "5.0 MB"
+    assert (plural(1, "page"), plural(3, "page"), plural(0, "passage")) == (
+        "1 page",
+        "3 pages",
+        "0 passages",
+    )
     assert status_label("embedding") == "Computing embeddings" and status_label("odd") == "Odd"
     assert has_work_in_flight([{"status": "completed"}, {"status": "queued"}])
     assert not has_work_in_flight([{"status": "completed"}, {"status": "failed"}])

@@ -10,7 +10,7 @@ from frontend import state
 from frontend.api import ApiError
 from frontend.config import FrontendConfig
 from frontend.errors import describe
-from frontend.format import ACCEPTED_TYPES, has_work_in_flight, human_size, status_label
+from frontend.format import ACCEPTED_TYPES, has_work_in_flight, human_size, plural, status_label
 
 
 def _upload_box() -> None:
@@ -76,11 +76,11 @@ def _row(document: dict[str, Any]) -> None:
         head.markdown(f"{icon} **{document['filename']}**")
         meta = [status_label(status), human_size(document["size_bytes"])]
         if document.get("page_count"):
-            meta.append(f"{document['page_count']} pages")
+            meta.append(plural(document["page_count"], "page"))
         if document.get("chunk_count"):
-            meta.append(f"{document['chunk_count']} passages")
+            meta.append(plural(document["chunk_count"], "passage"))
         if document.get("ocr_status") == "used":
-            meta.append(f"OCR on {document['ocr_pages']} pages")
+            meta.append(f"OCR on {plural(document['ocr_pages'], 'page')}")
         head.caption(" · ".join(meta))
         if status == "failed":
             _failure(document)
@@ -112,7 +112,13 @@ def _listing() -> None:
         st.caption("No documents yet. Upload one above to start asking questions about it.")
     for document in documents:
         _row(document)
-    st.session_state["docs_in_flight"] = has_work_in_flight(documents)
+    busy = has_work_in_flight(documents)
+    before = st.session_state.get("docs_in_flight", True)
+    st.session_state["docs_in_flight"] = busy
+    if busy != before:
+        # the fragment's polling interval is fixed when the page is drawn, so a change (the first
+        # upload, or the last document finishing) needs one full re-run to switch polling on/off
+        st.rerun()
 
 
 def render() -> None:

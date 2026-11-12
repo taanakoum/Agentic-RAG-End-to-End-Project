@@ -50,6 +50,11 @@ def human_size(size_bytes: int) -> str:
     return f"{size_bytes} B"  # unreachable; keeps the type checker honest
 
 
+def plural(count: int, noun: str) -> str:
+    """ "1 page", "2 pages"."""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def status_label(status: str) -> str:
     return STATUS_LABEL.get(status, status.capitalize())
 
