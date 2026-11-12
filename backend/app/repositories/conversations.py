@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ingestion.outbox import KIND_PURGE_CONVERSATION
 from app.models.chat import ChatExecution, Conversation, Message
 from app.models.document import OutboxEvent
+from app.models.feedback import MessageFeedback
 
 
 class ConversationRepository:
@@ -111,6 +112,19 @@ class ConversationRepository:
             )
         )
         return {row.id: int(row.last_seq) for row in rows}
+
+    async def feedback_for(
+        self, user_id: uuid.UUID, message_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, tuple[str, str | None]]:
+        """The caller's own ratings of these messages (never anyone else's)."""
+        if not message_ids:
+            return {}
+        rows = await self._session.execute(
+            select(
+                MessageFeedback.message_id, MessageFeedback.rating, MessageFeedback.comment
+            ).where(MessageFeedback.user_id == user_id, MessageFeedback.message_id.in_(message_ids))
+        )
+        return {row.message_id: (row.rating, row.comment) for row in rows}
 
     async def list_messages(
         self,

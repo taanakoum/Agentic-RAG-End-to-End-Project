@@ -25,6 +25,13 @@ class FeedbackCreate(BaseModel):
         return cleaned or None
 
 
+class MessageFeedbackSummary(BaseModel):
+    """The caller's own rating of a message, as shown when a conversation is reopened."""
+
+    rating: Literal["up", "down"]
+    comment: str | None = None
+
+
 class FeedbackPublic(BaseModel):
     message_id: uuid.UUID
     rating: Literal["up", "down"]

@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.feedback import MessageFeedbackSummary
+
 
 class AgentConfig(BaseModel):
     """The only agent options a user may choose (safe knobs; no prompts, tools or model keys)."""
@@ -76,6 +78,9 @@ class MessagePublic(BaseModel):
     )
     execution_id: uuid.UUID | None
     created_at: datetime
+    feedback: MessageFeedbackSummary | None = Field(
+        default=None, description="The caller's own thumbs up/down on this message, if any"
+    )
 
 
 class MessageList(BaseModel):

@@ -157,3 +157,22 @@ async def test_feedback_disappears_with_the_message_row(
         await db.execute(text("DELETE FROM messages WHERE id = :m"), {"m": assistant})
         await db.commit()
     assert await count(infra) == 0  # ON DELETE CASCADE: no orphaned feedback
+
+
+async def test_my_rating_comes_back_with_the_message_list_and_only_mine(
+    client: httpx2.AsyncClient, infra: Infrastructure, scripted: ScriptedModel
+) -> None:
+    alice = await make_actor(client)
+    session, _, assistant = await answer(client, infra, alice)
+
+    async def history() -> list[dict[str, Any]]:
+        resp = await client.get(f"{API}/sessions/{session}/messages", headers=alice.headers)
+        return resp.json()["items"]
+
+    assert [m["feedback"] for m in await history()] == [None, None]
+    await rate(client, alice, assistant, "down", comment="missed page 2")
+    items = await history()
+    assert items[0]["feedback"] is None  # the question is not an answer
+    assert items[1]["feedback"] == {"rating": "down", "comment": "missed page 2"}
+    await client.delete(f"{API}/feedback/{assistant}", headers=alice.headers)
+    assert (await history())[1]["feedback"] is None

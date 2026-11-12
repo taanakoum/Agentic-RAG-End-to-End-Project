@@ -95,8 +95,10 @@ def _settings(session: dict[str, Any]) -> None:
 # ------------------------------------------------------------------ rendering an answer
 
 
-def _feedback(message_id: str) -> None:
+def _feedback(message_id: str, stored: dict[str, Any] | None = None) -> None:
     ratings: dict[str, str] = st.session_state.setdefault("ratings", {})
+    if stored and message_id not in ratings:
+        ratings[message_id] = str(stored["rating"])  # given earlier (possibly in another session)
     current = ratings.get(message_id)
     up, down, _ = st.columns([1, 1, 8])
     chosen: str | None = None
@@ -127,7 +129,9 @@ def _feedback(message_id: str) -> None:
                 st.success("Thanks for the feedback.")
 
 
-def _answer(response: dict[str, Any], message_id: str | None) -> None:
+def _answer(
+    response: dict[str, Any], message_id: str | None, stored: dict[str, Any] | None = None
+) -> None:
     for level, text in answer_notices(response):
         (st.warning if level == "warning" else st.info)(text)
     st.markdown(response["answer"])  # an unverifiable answer was already replaced server-side
@@ -142,7 +146,7 @@ def _answer(response: dict[str, Any], message_id: str | None) -> None:
             st.session_state["queued_message"] = follow_up
             st.rerun()
     if message_id:
-        _feedback(message_id)
+        _feedback(message_id, stored)
 
 
 def _history(session_id: str) -> None:
@@ -154,7 +158,7 @@ def _history(session_id: str) -> None:
     for message in messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant" and message.get("response"):
-                _answer(message["response"], message["id"])
+                _answer(message["response"], message["id"], message.get("feedback"))
             else:
                 st.markdown(message["content"])
 

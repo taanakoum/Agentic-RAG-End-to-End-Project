@@ -21,6 +21,7 @@ from app.schemas.chat import (
     MessageList,
     MessagePublic,
 )
+from app.schemas.feedback import MessageFeedbackSummary
 from app.services.auth_service import AuthenticatedUser
 from app.services.chat_turns import DEFAULT_TITLE
 
@@ -36,7 +37,9 @@ def to_public(conversation: Conversation) -> ConversationPublic:
     )
 
 
-def to_message_public(message: Message) -> MessagePublic:
+def to_message_public(
+    message: Message, feedback: tuple[str, str | None] | None = None
+) -> MessagePublic:
     return MessagePublic(
         id=message.id,
         seq=int(message.seq),
@@ -45,6 +48,11 @@ def to_message_public(message: Message) -> MessagePublic:
         response=message.response,
         execution_id=message.execution_id,
         created_at=message.created_at,
+        feedback=(
+            MessageFeedbackSummary(rating=feedback[0], comment=feedback[1])  # pyright: ignore[reportArgumentType]
+            if feedback
+            else None
+        ),
     )
 
 
@@ -112,4 +120,7 @@ class ConversationService:
         rows, more = await self._repo.list_messages(
             user.id, conversation_id, after_seq=after_seq, limit=limit
         )
-        return MessageList(items=[to_message_public(m) for m in rows], has_more=more)
+        ratings = await self._repo.feedback_for(user.id, [m.id for m in rows])
+        return MessageList(
+            items=[to_message_public(m, ratings.get(m.id)) for m in rows], has_more=more
+        )

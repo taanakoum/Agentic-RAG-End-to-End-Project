@@ -309,3 +309,20 @@ def test_signing_out_wipes_the_previous_persons_state_before_the_next_sign_in(
     assert "maximum upload" not in text_of(at) and "ANSWER" not in text_of(at)
     assert not [b for b in at.sidebar.button if "maximum upload" in b.label]
     assert "Ask a question about your uploaded documents." in text_of(at)
+
+
+def test_a_rating_given_earlier_is_remembered_when_the_conversation_is_reopened(
+    backend: LiveBackend,
+) -> None:
+    at, client = signed_in_app(backend)
+    upload_handbook(client)
+    ask(at)
+    session = at.session_state["active_session"]
+    message = next(m for m in client.messages(session) if m["role"] == "assistant")["id"]
+    client.send_feedback(message, "up", "helpful")
+
+    reopened = app_for(backend, client).run()  # a brand-new browser session
+    next(b for b in reopened.sidebar.button if "maximum upload" in b.label).click()
+    reopened.run()
+    assert reopened.session_state["ratings"][message] == "up"
+    assert next(b for b in reopened.button if b.label == "👍").proto.type == "primary"
