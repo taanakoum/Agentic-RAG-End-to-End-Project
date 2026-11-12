@@ -18,15 +18,18 @@ for the language model.
 
 ## Screenshots
 
-Taken from the running application in a real browser (`scripts/browser_tour.py`, sample documents from
-[examples/](examples/QUESTIONS.md)).
+From the running application in a real (headless) browser, with real public documents: NIST SP
+800-63B (80 pages), the "Attention Is All You Need" paper and a Word demo file
+([how they were produced](evaluation/reports/browser_tour_real_docs.md)).
 
 | | |
 |---|---|
-| ![Answer with verified sources](docs/images/03-answer-with-sources.png) | ![Documents ready](docs/images/02-documents-ready.png) |
-| *A cited answer: the excerpt behind [1] was verified against the stored document text* | *Uploaded documents moving to Ready (live status)* |
-| ![Memory](docs/images/04-memory.png) | ![Account](docs/images/05-account.png) |
-| *Opt-in long-term memory* | *Devices, two-factor authentication, password, account deletion* |
+| ![Sign in](docs/images/01-sign-in.png) | ![Answer with verified sources](docs/images/05-answer-with-sources.png) |
+| *Sign in (with opt-in "keep me signed in")* | *A cited answer: the excerpt behind [1] was verified against page 24* |
+| ![Documents processing](docs/images/03-documents-processing.png) | ![Documents ready](docs/images/04-documents-ready.png) |
+| *Live progress while documents are processed* | *Three real documents, 293 passages, ready to search* |
+| ![Memory](docs/images/07-memory.png) | ![Account](docs/images/08-account.png) |
+| *Opt-in long-term memory* | *Two-factor authentication, password, devices, account deletion* |
 
 ---
 
@@ -89,8 +92,9 @@ What the platform provides for that scenario:
   secrets only in `.env`.
 
 **Interface**
-- Streamlit app: sign in/register (with MFA step), chat with streaming and citations, feedback
-  (thumbs and comment), conversation management, document upload with live status and retry,
+- Streamlit app (custom theme): sign in/register (MFA step, opt-in "keep me signed in"), chat with
+  streaming, source cards and suggested questions, feedback
+  (thumbs and comment), conversation management, document upload with live progress bars and retry,
   memory management, account and device management.
 - REST API under `/api/v1` with interactive docs at `/docs` (development).
 
@@ -240,6 +244,11 @@ configurations, they do not promise quality on your data; full tables and caveat
 | hybrid (RRF) | 0.72 | 0.92 | 0.82 | 10 ms |
 | hybrid + cross-encoder re-rank (default) | 0.94 | 0.94 | 0.94 | 2.2 s |
 
+With real, larger public documents in a real browser
+([report](evaluation/reports/browser_tour_real_docs.md)): an 80-page NIST standard, a 15-page research
+paper and a Word file were processed in 220 s, 49 s and 51 s on a laptop CPU, and six questions about
+them were answered correctly with verified page citations in about 4 s each.
+
 With a real free model (`gemini-3.5-flash-lite`, 46 questions): valid structured output on the first
 try for 94% of answerable questions, the correct source cited for 94%, 100% correct refusals on the
 unanswerable ones, median answer latency 3.5 s.
@@ -266,10 +275,11 @@ Honest summary of what is verified and what is not (details in [docs/KNOWN_ISSUE
   Windows; the real hosted-model path with Gemini's free tier.
 - **Not yet verified:** the Docker images and the full compose stack (never built on the author's
   machine), an S3/MinIO object store (only an S3 emulator), a real-browser walk-through by the author
-  beyond the automated UI tests, and behaviour under load (Phase 11 is the next milestone).
+  and behaviour under load (Phase 11 is the next milestone). The UI and the whole workflow were
+  verified in a real headless browser with real documents.
 - **By design:** answers stream only after they are validated and saved, so the first token arrives
-  with the full answer (status events cover the wait); a page reload signs you out because tokens are
-  not stored in the browser; the re-ranker costs about 2 s per question on a CPU.
+  with the full answer (status events cover the wait); access tokens never reach the browser ("keep me
+  signed in" stores only a revocable handle); the re-ranker costs about 2 s per question on a CPU.
 - Free-tier model quotas and model names change without notice.
 
 ## Documentation

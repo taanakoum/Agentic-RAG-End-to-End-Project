@@ -28,9 +28,9 @@ The model comes from `.env`; without it the app works but questions about docume
 
 | Area | Behaviour |
 |---|---|
-| Sign in / register | Separate messages for missing fields, wrong credentials, taken email, weak password (field-level); second-factor step when the account has MFA; "Forgot your password?" (reset code by e-mail); expiry returns to sign-in with a reason |
+| Sign in / register | Two-column page (product pitch and a sign-in card); separate messages for missing fields, wrong credentials, taken email, weak password (field-level); second-factor step when the account has MFA; "Forgot your password?" (reset code by e-mail); opt-in "Keep me signed in on this device" (tokens stay on the server, see SECURITY); expiry returns to sign-in with a reason |
 | Chat | New/open/rename/delete conversations (history from the server); streamed answer with status stages; sources panel (document, page, excerpt); notices for unverified, insufficient or degraded answers; follow-up questions as buttons; thumbs up/down + comment (earlier ratings are remembered); per-conversation options limited to top-k and re-ranking |
-| Documents | Upload (PDF, DOCX, TXT, MD, CSV; the server verifies the real type), live status while processing, failure reason in plain words, Retry only for recoverable failures, Re-index, Delete (confirmed), duplicate notice |
+| Documents | Summary tiles (ready, processing, failed, passages); upload (PDF, DOCX, TXT, MD, CSV; the server verifies the real type); status badge and a progress bar per pipeline stage while processing (polled every 2 s), failure reason in plain words, Retry only for recoverable failures, Re-index, Delete (confirmed), duplicate notice |
 | Memory | Opt-in switch and retention, list, add, edit, delete, reset (confirmed) |
 | Account | Verify e-mail, two-factor authentication (QR code + secret, recovery codes shown once, turn off), signed-in devices (revoke), change password, delete account, sign out |
 
@@ -45,7 +45,9 @@ second-factor code is also a 401 and must not sign you out).
 
 - Tokens live only in `st.session_state` (server memory of that Streamlit session): never in the
   URL, cookies, logs or browser storage. Consequence: reloading the page starts a new session and
-  the person signs in again (KI-041).
+  the person signs in again, unless they ticked "Keep me signed in": then the browser holds only a
+  random, revocable handle in a `SameSite=Strict` cookie and the tokens stay on the server
+  (`frontend/remember.py`).
 - One transparent refresh on a token 401; a failed refresh ends the session. Sign-out revokes the
   refresh token on the server and wipes every per-user key from the session state.
 - Client state is never trusted: forged `active_session` or `user` values change nothing, because

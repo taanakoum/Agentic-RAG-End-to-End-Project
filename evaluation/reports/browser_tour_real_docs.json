@@ -1,0 +1,88 @@
+{
+  "account": "tour-fa7ab64a@example.com",
+  "documents": [
+    {
+      "file": "nist_sp_800-63b.pdf",
+      "status": "completed",
+      "pages": 80,
+      "passages": 218,
+      "parser": "docling",
+      "ocr_pages": 0,
+      "processing_s": 220.0,
+      "error": null
+    },
+    {
+      "file": "calibre_demo.docx",
+      "status": "completed",
+      "pages": 1,
+      "passages": 17,
+      "parser": "structured",
+      "ocr_pages": 0,
+      "processing_s": 50.9,
+      "error": null
+    },
+    {
+      "file": "attention_is_all_you_need.pdf",
+      "status": "completed",
+      "pages": 15,
+      "passages": 58,
+      "parser": "docling",
+      "ocr_pages": 0,
+      "processing_s": 49.2,
+      "error": null
+    }
+  ],
+  "questions": [
+    {
+      "question": "What is the minimum length of a memorized secret chosen by the subscriber?",
+      "answer": "Memorized secrets chosen by the subscriber must be at least 8 characters in length [1].",
+      "citations": [
+        "[1] nist_sp_800-63b.pdf, page 24"
+      ],
+      "seconds": 4.0
+    },
+    {
+      "question": "Should verifiers require users to change their passwords periodically?",
+      "answer": "No, verifiers should not require memorized secrets (passwords) to be changed arbitrarily or periodically, unless there is a user request or evidence of authenticator compromise [S1, S2].",
+      "citations": [
+        "[1] nist_sp_800-63b.pdf, page 25",
+        "[2] nist_sp_800-63b.pdf, page 64"
+      ],
+      "seconds": 4.0
+    },
+    {
+      "question": "How many failed authentication attempts may a verifier allow before rate limiting?",
+      "answer": "Unless otherwise specified for a given authenticator, verifiers shall limit consecutive failed authentication attempts on a single account to no more than 100 [1].",
+      "citations": [
+        "[1] nist_sp_800-63b.pdf, page 36"
+      ],
+      "seconds": 4.0
+    },
+    {
+      "question": "How many layers does the encoder of the base Transformer have?",
+      "answer": "The encoder of the Transformer is composed of a stack of \ud835\udc41 = 6 N=6 identical layers [1].",
+      "citations": [
+        "[1] attention_is_all_you_need.pdf, page 3"
+      ],
+      "seconds": 6.0
+    },
+    {
+      "question": "What BLEU score does the big Transformer reach on WMT 2014 English-to-German?",
+      "answer": "The big Transformer model achieves a BLEU score of 28.4 on the WMT 2014 English-to-German translation task [1].",
+      "citations": [
+        "[1] attention_is_all_you_need.pdf, page 8"
+      ],
+      "seconds": 4.0
+    },
+    {
+      "question": "What does the calibre demo document demonstrate?",
+      "answer": "The calibre demo document demonstrates the ability of the calibre DOCX Input plugin to convert various typographic features from a Microsoft Word document into a modern ebook format [1].",
+      "citations": [
+        "[1] calibre_demo.docx, page 1"
+      ],
+      "seconds": 4.0
+    }
+  ],
+  "kept_signed_in_after_reload": true,
+  "all_ready_after_s": 225.6
+}

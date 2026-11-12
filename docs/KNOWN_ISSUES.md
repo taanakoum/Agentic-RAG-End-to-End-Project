@@ -9,7 +9,7 @@ Last review: 2026-11-12.
 
 | # | What | Why it matters | How to do it |
 |---|---|---|---|
-| A1 | **Rotate the Gemini API key** (and decide what to do with the old key in git history) - KI-040 | The key was pasted into a chat and, for a short time, used as a sample value in a test: it is in the **local, unpushed** commit `a555334`. Anyone who could read that commit could use the key | 1. Create a new key at <https://aistudio.google.com/apikey> and delete the old one there (this alone makes the old key worthless). 2. Put the new key in `.env` (`LLM_API_KEY=`). 3. Before publishing, either publish from a fresh history (`git checkout --orphan public-main`, `git add -A`, `git commit -m "Initial public version"`, push that branch as `main`) or rewrite history on a fresh clone with `uvx git-filter-repo --replace-text expressions.txt` (a file containing `<old key>==>REMOVED`). I did not rewrite history myself because it changes your commits |
+| A1 | **Rotate the Gemini API key** - KI-040 | The key was pasted into a chat. The git history was cleaned on 2026-11-13 (the two commits that held it were rewritten and the old objects pruned; no commit or object in the repository contains it), but the key itself is still valid until you revoke it | Create a new key at <https://aistudio.google.com/apikey>, delete the old one there, put the new one in `.env` (`LLM_API_KEY=`), restart the stack |
 | A2 | **Docker verification** (WSL2) - KI-003, KI-009, KI-014, KI-019, KI-020, KI-025; also the Docker smoke test of Phase 10 and gate G1 | The images and the compose stack were written but have never been built or run, so container behaviour, the Linux sandbox limits and the memory limits are unverified | In an *administrator* PowerShell: `wsl --install --no-distribution`, reboot, start Docker Desktop, then `powershell -ExecutionPolicy Bypass -File scripts/verify_g1.ps1`. Paste its output into `docs/EXECUTION_LOG.md`. Details: `docs/DEPLOYMENT.md` |
 | A3 | **Choose a licence** | Without a `LICENSE` file a public repository is "all rights reserved" and nobody may legally reuse it | Add a `LICENSE` file (MIT or Apache-2.0 are the usual choices for a portfolio project) and update the License section of `README.md` |
 | A4 | **Check `.env.example`** | A permission rule blocks my tooling from reading `.env.*`, so I could not review it for stale or real values before the repo goes public | Open it, confirm it only has placeholders. `python scripts/init_env.py` is the maintained way to create a `.env`; you may `git rm .env.example` and keep only that script |
@@ -64,12 +64,6 @@ Accepted limitations, trade-offs and planned work. "Plan" says when it will be l
 |---|---|---|
 | KI-047 | OpenTelemetry's SQLAlchemy instrumentation does not support the installed SQLAlchemy 2.1.8 yet ("only instruments sqlalchemy < 2.1.0"), so database queries do not appear as spans (HTTP, Redis, agent, retrieval, model and worker spans do). A logged error at start-up says so | Upgrade `opentelemetry-instrumentation-sqlalchemy` when it supports 2.1 |
 | KI-037 | OTLP export is verified against a local receiver and **Arize Phoenix 21** (spans arrive with their hierarchy and without private attributes); Langfuse and other collectors are not verified (they use the same standard endpoint) | Try Langfuse if you adopt it |
-
-### Interface
-| ID | Limitation | Plan |
-|---|---|---|
-| KI-041 | Reloading the page (or opening a second tab) signs you out: tokens are deliberately not stored in the browser | Accepted; httpOnly-cookie sessions behind a reverse proxy would be the alternative |
-| KI-049 | Uploads show no byte-level progress bar (Streamlit does not expose one); the document list polls every 3 s while documents are processing | Accepted |
 
 ### Tests
 | ID | Limitation | Plan |
