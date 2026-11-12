@@ -1,17 +1,43 @@
+# ---------------------------------------------------------------- secrets and local configuration
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------- private notes (never published)
+private/
+
+# ---------------------------------------------------------------- local tooling of the author
+.claude/
+CLAUDE.md
+graphify-out/
+
+# ---------------------------------------------------------------- Python
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
+venv/
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .pyright/
-*.egg-info/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+
+# ---------------------------------------------------------------- runtime data (models, uploads, vectors, logs)
 data/
 storage/
-.coverage
-htmlcov/
-node_modules/
-graphify-out/
+*.log
 evaluation/.cache/
+
+# ---------------------------------------------------------------- editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+node_modules/

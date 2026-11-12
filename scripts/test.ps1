@@ -10,7 +10,7 @@ param(
   [string[]]$Extra = @()
 )
 $ErrorActionPreference = 'Stop'
-if (-not $env:UV_PROJECT_ENVIRONMENT) { $env:UV_PROJECT_ENVIRONMENT = 'C:/Users/ali_a/devtools/venv' }
+if (-not $env:UV_PROJECT_ENVIRONMENT) { $env:UV_PROJECT_ENVIRONMENT = "$env:USERPROFILE/devtools/venv" }
 
 function Run($arguments) {
   Write-Host ">> uv run --no-sync $($arguments -join ' ')" -ForegroundColor Cyan

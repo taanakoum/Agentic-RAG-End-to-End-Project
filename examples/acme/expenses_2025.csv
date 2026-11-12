@@ -1,0 +1,12 @@
+department,quarter,category,amount_eur
+Sales,Q1,Travel,18200
+Sales,Q2,Travel,26400
+Sales,Q2,Meals,3100
+Engineering,Q1,Travel,7400
+Engineering,Q2,Travel,9100
+Engineering,Q2,Equipment,41200
+Marketing,Q1,Travel,12800
+Marketing,Q2,Travel,15300
+Marketing,Q2,Events,38900
+Finance,Q2,Travel,2200
+Finance,Q2,Training,6400

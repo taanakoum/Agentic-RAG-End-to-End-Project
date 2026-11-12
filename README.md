@@ -1,44 +1,280 @@
 # Agentic RAG Platform
 
-Async, multi-user Agentic RAG platform (FastAPI, LangGraph, PostgreSQL, Qdrant, Redis/Celery, Streamlit).
-Requirements: `docs/spec/`. Progress: `docs/IMPLEMENTATION_STATUS.md`. Log: `docs/EXECUTION_LOG.md`.
+A multi-user platform that lets people **ask questions about their own documents and get answers they
+can verify**. Every answer is built from the user's own uploads, every citation is checked by the
+server against the passages that were actually retrieved, and one user can never see another user's
+data.
 
-## Development setup (Windows, native services; Docker path is unverified, see KI-003)
-```powershell
-# one-time: services are installed under C:\Users\<you>\devtools (see docs/EXECUTION_LOG.md Entry 2)
-$env:UV_PROJECT_ENVIRONMENT = "$env:USERPROFILE\devtools\venv"   # keep the venv outside OneDrive
-uv sync                                                           # Python 3.13, pinned by uv.lock
-powershell -File scripts/dev_services.ps1 start                   # PostgreSQL, Redis, Qdrant (status|stop)
-uv run --no-sync alembic -c backend/alembic.ini upgrade head      # migrations (uses .env / rag_dev)
+Built with FastAPI, LangGraph, PostgreSQL, Qdrant, Redis/Celery and Streamlit. It runs on a laptop
+against a **free hosted language model**: no GPU, no paid service and no local model download is needed
+for the language model.
+
+> Status: feature complete for the core product and thoroughly tested (1,090 automated tests, strict
+> type checking, security and failure-recovery suites). Load testing and a verified Docker deployment
+> are the remaining roadmap items; see [Status and limitations](#status-and-limitations).
+
+---
+
+## A realistic use case
+
+**Internal policy and contract assistant for a 200-person company.** The legal, HR and compliance
+teams upload employee handbooks, supplier contracts, security policies and regulatory guidance
+(PDF, Word, Markdown, CSV, text). Employees then ask things like *"How many days of parental leave do
+contractors get?"* or *"Which of our supplier contracts allow termination for convenience?"*.
+
+What the platform provides for that scenario:
+
+- **Answers with proof.** Each answer carries citations (document, page, exact excerpt) that were
+  verified server-side; if the documents do not contain the answer the assistant says so instead of
+  guessing. An answer that cannot be verified is never shown.
+- **Privacy by construction.** Every search is filtered by owner at the vector-store level, every API
+  route checks ownership, and cross-user access returns the same `404` as a missing item. The language
+  model never receives document ids, user ids or tools.
+- **Operations you can reason about.** Uploads are processed in the background with retries and a
+  state machine you can watch; the API stays responsive while documents are being parsed; every
+  request has a trace id that follows it from the browser through the API into the background worker.
+- **Cost control on free or metered models.** A built-in quota guard counts model requests per day,
+  per minute and per user, refuses locally before the provider does, falls back to another model, and
+  caches repeated questions in Redis.
+- **Swap the model without touching code.** Any OpenAI-compatible endpoint works (Gemini, OpenRouter,
+  Groq, or a self-hosted vLLM/Ollama server when documents must not leave the company).
+
+---
+
+## Features
+
+**Documents and ingestion**
+- Upload PDF, DOCX, TXT, Markdown and CSV. The file type is verified from the *content* (magic bytes,
+  then a parser), never from the extension or the declared MIME type.
+- Parsing runs in sandboxed child processes with time and memory limits (decompression bombs, XXE,
+  entity bombs and malformed files are rejected safely).
+- PDFs go through Docling (layout and tables); OCR (RapidOCR, open source) runs only for pages without
+  a text layer; heading-aware chunking.
+- Background processing with a transactional outbox, idempotent Celery tasks, a persisted document
+  state machine, retries with backoff, a reconciler for stuck jobs, duplicate detection per owner, and
+  clean deletion (hidden immediately, purged asynchronously).
+
+**Retrieval and answers**
+- Hybrid search in Qdrant (dense `bge-small` + BM25 sparse), Reciprocal Rank Fusion and a cross-encoder
+  re-ranker; the owner filter is applied to every query.
+- A **single-agent LangGraph** with a bounded repair loop: classify -> (small talk | clarify | retrieve
+  -> generate -> verify -> repair or safe fallback) -> finalize -> persist
+  (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#2-how-a-question-is-answered-the-langgraph-loop)).
+- Versioned structured output (`RAGResponse`), server-side citation verification, prompt-injection-safe
+  context construction, follow-up question rewriting, optional long-term memory with explicit consent.
+- Streaming (Server-Sent Events) of answers that were already validated and saved; idempotency keys
+  make retries safe; one running answer per conversation with explicit conflict handling.
+- Persistent LangGraph checkpoints in PostgreSQL.
+
+**Accounts and security**
+- Argon2id passwords, JWT access tokens with rotating refresh tokens (reuse detection revokes the
+  family), TOTP multi-factor authentication with recovery codes, email verification, password reset,
+  account deletion, breached-password check, per-account and per-IP rate limiting (fail closed).
+- Security response headers, CORS off by default, stable error codes with request ids and no stack traces,
+  secrets only in `.env`.
+
+**Interface**
+- Streamlit app: sign in/register (with MFA step), chat with streaming and citations, feedback
+  (thumbs and comment), conversation management, document upload with live status and retry,
+  memory management, account and device management.
+- REST API under `/api/v1` with interactive docs at `/docs` (development).
+
+**Observability and evaluation**
+- OpenTelemetry traces and metrics (OTLP or a local JSONL file), trace context carried across the
+  upload -> outbox -> worker boundary, request/trace ids in every response and log line, spans that
+  never contain user content. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+- Reproducible evaluation of chunking, retrieval, routing, agent failure handling and generation with
+  committed reports ([docs/EVALUATION.md](docs/EVALUATION.md)).
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    UI[Streamlit UI] -- HTTP / SSE --> API[FastAPI]
+    API --> PG[(PostgreSQL)]
+    API --> AG[LangGraph agent] --> QD[(Qdrant)]
+    AG --> LLM[Hosted LLM<br/>quota guard + Redis cache]
+    API -- upload, outbox --> RD[(Redis)] --> W[Celery workers<br/>parse, OCR, chunk, embed] --> QD
 ```
-Copy `.env.example` to `.env` and fill in values (`.env` is gitignored).
 
-Run the API and a worker (Windows needs `--pool=solo`; Linux/Docker uses the default prefork pool):
-```powershell
-cd backend
-$env:PYTHONPATH = "."
-uvicorn app.main:app --port 8000
-celery -A app.tasks.celery_app:celery_app worker --pool=solo --loglevel=INFO
-celery -A app.tasks.celery_app:celery_app beat --loglevel=INFO   # outbox dispatcher + reconciler
+Full explanation, including the agent loop and a turn-by-turn sequence:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| API | FastAPI (async), Pydantic v2, SQLAlchemy 2 (async) + Alembic |
+| Agent | LangGraph (PostgreSQL checkpointer), OpenAI-compatible LLM client |
+| Retrieval | Qdrant (dense + sparse), FastEmbed (`bge-small-en-v1.5`, BM25), cross-encoder re-ranker |
+| Ingestion | Docling, RapidOCR, Celery + Redis, sandboxed parsers |
+| Storage | PostgreSQL (source of truth), Redis (broker, cache, limits), local volume or S3-compatible objects |
+| UI | Streamlit |
+| Quality | pytest (unit, integration, end-to-end), Ruff, Pyright (strict), Locust (load tests) |
+| Observability | OpenTelemetry (OTLP; works with Phoenix, Langfuse, Grafana Tempo, any collector) |
+
+---
+
+## Run it on your laptop
+
+You need: **Python 3.13** (via [uv](https://docs.astral.sh/uv/)), about **6 GB of free disk** (search
+models and Docling download on first use) and **PostgreSQL, Redis and Qdrant** reachable on localhost
+(Docker is the easiest way). A free language-model API key is optional: without it uploads, search and
+everything except *answering* still work.
+
+The complete, step-by-step guide with troubleshooting is **[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)**.
+The short version:
+
+```bash
+# 1. get the code and the dependencies (creates a virtual environment, pinned by uv.lock)
+git clone <this repository> && cd <repository>
+uv sync --extra frontend
+
+# 2. start PostgreSQL, Redis and Qdrant (Docker)
+python scripts/init_env.py                     # writes .env with fresh random secrets
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis qdrant
+
+# 3. (optional) add a free model key to .env  ->  LLM_API_KEY=...   (see "Language model" below)
+
+# 4. migrate the database and start API + worker + scheduler + UI
+uv run --no-sync python scripts/stack.py start
 ```
-Health: `GET /api/v1/health/live`, `/ready` (PostgreSQL, Redis, Qdrant, storage), `/workers`.
 
-## Quality commands
-```powershell
-uv run --no-sync ruff check .
-uv run --no-sync ruff format --check .
-uv run --no-sync pyright
-uv run --no-sync pytest backend/tests/unit          # no services needed
-uv run --no-sync pytest backend/tests/integration   # needs the dev services; uses rag_test, Redis db 15
-uv run --no-sync pytest                             # everything
+Open **http://127.0.0.1:8501**, create an account, upload a document and ask a question. Stop
+everything with `uv run --no-sync python scripts/stack.py stop`.
+
+On Windows without Docker, native services can be installed once and started with
+`scripts/dev_services.ps1`; see [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md#windows-without-docker).
+
+### Using the app
+
+1. **Create an account** (the *Create account* tab). Passwords must be strong and not in the
+   breached-password list.
+2. **Documents** -> upload a file. Watch it move through *Queued -> Reading the text -> Splitting ->
+   Computing embeddings -> Indexing -> Ready*. A failed document shows a plain-language reason and a
+   *Retry* button when retrying can help.
+3. **Chat** -> ask a question. The answer streams in; open **Sources** to see the document, page and
+   exact excerpt behind each citation. Use 👍/👎 to rate it. Follow-up questions ("and for 2023?") are
+   understood in context.
+4. **Memory** (optional) -> switch it on to let the assistant remember stable facts about you
+   (for example your preferred language) across conversations; you can view, edit and delete them.
+5. **Account** -> see where you are signed in, sign out other devices, change your password.
+
+### Using the API directly
+
+```bash
+API=http://127.0.0.1:8000/api/v1
+curl -s $API/auth/register -H 'content-type: application/json' \
+     -d '{"email":"me@example.com","password":"a-long-Unusual-passphrase-42"}'
+TOKEN=$(curl -s $API/auth/login -H 'content-type: application/json' \
+     -d '{"email":"me@example.com","password":"a-long-Unusual-passphrase-42"}' | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+curl -s $API/documents/upload -H "Authorization: Bearer $TOKEN" -F file=@handbook.pdf
+SESSION=$(curl -s $API/sessions -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{}' \
+     | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
+curl -N $API/chat/stream -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+     -H "Idempotency-Key: $(python -c 'import uuid;print(uuid.uuid4())')" \
+     -d "{\"session_id\":\"$SESSION\",\"message\":\"What is the notice period?\"}"
 ```
-Tests never touch the dev database: `backend/tests/conftest.py` forces `rag_test`, Redis db 15 and a `test_` Qdrant prefix.
 
-## Docker (UNVERIFIED)
-`docker-compose.yml` and `backend/Dockerfile` are written but have never been built or run: Docker Desktop is installed but needs WSL2 (admin + reboot; KI-014). See docs/DEPLOYMENT.md for the exact steps and `scripts/verify_g1.ps1`.
+The full endpoint list is in [docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md); interactive docs
+are served at `/docs` while `APP_ENV=dev`.
 
-## Documents
-Supported uploads: PDF, DOCX, TXT, MD, CSV. PDFs are parsed with Docling (OCR only for pages without a text layer), everything is parsed in a sandboxed child process, chunked, embedded (FastEmbed dense + BM25 sparse) and indexed in Qdrant. Licences and cost: docs/LICENSES.md.
+### Language model (free hosted API)
 
-## Search
-`POST /api/v1/search` runs hybrid retrieval (dense + BM25 sparse, RRF fusion, cross-encoder rerank) over the caller's own completed documents. Design and measured results: docs/ARCHITECTURE_DECISIONS.md ADR-022, evaluation/reports/retrieval_eval.md. Reproduce: `PYTHONPATH=backend;. uv run --no-sync python evaluation/retrieval/run_eval.py`.
+Set three values in `.env` (or run `python scripts/init_env.py --llm openrouter|groq|gemini`):
+
+```
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai   # any OpenAI-compatible URL
+LLM_API_KEY=...                                                        # from the provider's console
+LLM_MODEL=gemini-3.5-flash-lite
+```
+
+Free tiers have small daily quotas that providers change without notice; the application counts its
+own requests (`LLM_DAILY_REQUEST_BUDGET`, `LLM_REQUESTS_PER_MINUTE`, `RL_CHAT_DAILY_LIMIT`) so it
+degrades gracefully instead of failing mid-conversation. Details and calibration:
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#language-model-free-hosted-api-no-local-model). **Documents
+and questions are sent to the model provider**: choose one whose terms fit your data, or self-host an
+OpenAI-compatible server and point `LLM_BASE_URL` at it ([docs/SECURITY.md](docs/SECURITY.md)).
+
+---
+
+## Quality, tests and measured results
+
+```bash
+uv run --no-sync pytest backend/tests/unit              # 528 tests, no services needed
+uv run --no-sync pytest                                 # everything: 1,090 tests (needs the services)
+uv run --no-sync ruff check . && uv run --no-sync ruff format --check . && uv run --no-sync pyright
+```
+
+PowerShell users can run one category at a time: `scripts/test.ps1 -Category unit|integration|e2e|security|concurrency|failure|frontend|quality`
+(see [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for what each category covers). Tests use
+real PostgreSQL, Redis, Qdrant and Celery, never call a paid or hosted model, and the security and
+failure-recovery suites cover injection, token misuse, cross-user access, dependency outages, worker
+crashes and client disconnects.
+
+Measured on a laptop CPU with a small **synthetic** corpus (6 documents, 36 questions; numbers rank
+configurations, they do not promise quality on your data; full tables and caveats in
+[docs/EVALUATION.md](docs/EVALUATION.md) and `evaluation/reports/`):
+
+| Retrieval configuration (natural questions) | hit@1 | hit@3 | MRR | median latency |
+|---|---|---|---|---|
+| dense only | 0.58 | 0.72 | 0.69 | 9 ms |
+| BM25 only | 0.53 | 0.81 | 0.66 | 3 ms |
+| hybrid (RRF) | 0.72 | 0.92 | 0.82 | 10 ms |
+| hybrid + cross-encoder re-rank (default) | 0.94 | 0.94 | 0.94 | 2.2 s |
+
+With a real free model (`gemini-3.5-flash-lite`, 46 questions): valid structured output on the first
+try for 94% of answerable questions, the correct source cited for 94%, 100% correct refusals on the
+unanswerable ones, median answer latency 3.5 s.
+
+---
+
+## Project layout
+
+```
+backend/        FastAPI app (api, services, repositories, models, agents, retrieval, ingestion,
+                memory, llm, infra, tasks), Alembic migrations, tests
+frontend/       Streamlit app (API client, views)
+evaluation/     datasets, evaluation scripts and committed reports
+load_testing/   concurrency benchmark (Locust scenarios in progress)
+scripts/        init_env.py, stack.py (run everything), dev_services.ps1, test.ps1
+docs/           architecture, API, security, testing, evaluation, observability, deployment, decisions
+```
+
+## Status and limitations
+
+Honest summary of what is verified and what is not (details in [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)):
+
+- **Verified here:** the whole backend and UI against real PostgreSQL, Redis, Qdrant and Celery on
+  Windows; the real hosted-model path with Gemini's free tier.
+- **Not yet verified:** the Docker images and the full compose stack (never built on the author's
+  machine), an S3/MinIO object store (only an S3 emulator), a real-browser walk-through by the author
+  beyond the automated UI tests, and behaviour under load (Phase 11 is the next milestone).
+- **By design:** answers stream only after they are validated and saved, so the first token arrives
+  with the full answer (status events cover the wait); a page reload signs you out because tokens are
+  not stored in the browser; the re-ranker costs about 2 s per question on a CPU.
+- Free-tier model quotas and model names change without notice.
+
+## Documentation
+
+| Topic | Document |
+|---|---|
+| Set up and use it locally | [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) |
+| Architecture and the agent loop | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Decisions and their reasons | [docs/ARCHITECTURE_DECISIONS.md](docs/ARCHITECTURE_DECISIONS.md) |
+| API reference | [docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md) |
+| Security model | [docs/SECURITY.md](docs/SECURITY.md) |
+| Observability and traces | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
+| Evaluation | [docs/EVALUATION.md](docs/EVALUATION.md) |
+| Testing strategy | [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) |
+| Frontend | [docs/FRONTEND.md](docs/FRONTEND.md) |
+| Deployment and model setup | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Known issues | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) |
+| Third-party licences | [docs/LICENSES.md](docs/LICENSES.md) |
+
+## License
+
+Licence to be added by the repository owner (see docs/KNOWN_ISSUES.md). Third-party components are
+open source; see [docs/LICENSES.md](docs/LICENSES.md).

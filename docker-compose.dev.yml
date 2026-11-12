@@ -1,0 +1,18 @@
+# Development override: publish the infrastructure ports on localhost so the API, worker and UI can
+# run natively on your machine while PostgreSQL, Redis and Qdrant run in containers.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis qdrant
+#
+# Needs COMPOSE_POSTGRES_PASSWORD in .env (python scripts/init_env.py creates it). NOT verified by
+# the author on a machine with Docker (see docs/KNOWN_ISSUES.md).
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
+  qdrant:
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"

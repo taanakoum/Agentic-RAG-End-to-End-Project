@@ -45,8 +45,8 @@ An S3-compatible store can replace the local volume (see ADR-011; verified again
 - Retrieval models (embedding + BAAI/bge-reranker-v2-m3 int8, ~0.6 GB download) are cached in the `models` volume, now mounted by api and worker. Each API process loads them (`WARM_MODELS_ON_STARTUP=true` in compose); the api memory limit was raised to 4g for `WEB_CONCURRENCY=2` (UNVERIFIED, KI-025). Search latency on CPU: ~10 ms hybrid, ~2.2 s with the default reranker (KI-023); set `RERANK_ENABLED=false` for the fast path.
 
 ## Native development (what was actually verified)
-`scripts/dev_services.ps1` starts PostgreSQL, Redis and Qdrant from `C:\Users\ali_a\devtools`.
-Run tests with `export UV_PROJECT_ENVIRONMENT=C:/Users/ali_a/devtools/venv` then
+`scripts/dev_services.ps1` starts PostgreSQL, Redis and Qdrant from `%USERPROFILE%\devtools` (override with `DEVTOOLS_DIR`).
+Run tests with `export UV_PROJECT_ENVIRONMENT=$HOME/devtools/venv` (a virtual environment outside any synced folder) then
 `uv run --no-sync pytest`. No cloud account or paid service is needed anywhere.
 The Streamlit UI (optional extra `frontend`) is started as described in docs/FRONTEND.md.
 

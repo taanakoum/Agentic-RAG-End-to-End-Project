@@ -8,7 +8,7 @@ citations). ADR-031 records the design.
 
 ```powershell
 scripts\dev_services.ps1 start                       # PostgreSQL, Redis, Qdrant
-$env:UV_PROJECT_ENVIRONMENT = "C:/Users/ali_a/devtools/venv"
+$env:UV_PROJECT_ENVIRONMENT = "$env:USERPROFILE/devtools/venv"
 uv sync --extra frontend                              # Streamlit is an optional extra (pinned)
 uv run --no-sync alembic -c backend/alembic.ini upgrade head
 uv run --no-sync uvicorn app.main:create_app --factory --app-dir backend --port 8000
