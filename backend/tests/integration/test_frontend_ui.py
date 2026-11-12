@@ -11,6 +11,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from frontend.api import Tokens
+from frontend.theme import nav_label
 from tests.integration.frontend_helpers import (
     PASSWORD,
     app_for,
@@ -73,7 +74,9 @@ def test_signing_in_shows_the_app_and_signing_out_returns_to_the_start(
     signed_in(backend, "alice@example.com")
     at = sign_in(app_for(backend).run(), "alice@example.com")
     assert not at.exception
-    assert at.sidebar.radio[0].options == ["Chat", "Documents", "Memory", "Account"]
+    nav = at.sidebar.radio[0]
+    assert nav.options == [nav_label(s) for s in ("Chat", "Documents", "Memory", "Account")]
+    assert nav.value == "Chat"
     assert "alice@example.com" in "".join(str(m.value) for m in at.sidebar.markdown)
 
     button(at.sidebar, "Sign out").click()
@@ -130,3 +133,37 @@ def test_an_expired_session_sends_the_person_back_to_sign_in_with_a_reason(
     at.sidebar.radio[0].set_value("Documents").run()
     assert at.title[0].value == "Agentic RAG" and not at.sidebar.radio
     assert "session has expired" in text_of(at)
+
+
+def test_keep_me_signed_in_remembers_the_session_server_side_and_sign_out_revokes_it(
+    backend: LiveBackend,
+) -> None:
+    from frontend import remember
+
+    signed_in(backend, "alice@example.com")
+    before = remember.size()
+    at = app_for(backend).run()
+    at.checkbox(key="login_keep").check()
+    at = sign_in(at, "alice@example.com")
+    assert at.sidebar.radio and remember.size() == before + 1
+    handle = at.session_state["keep_handle"]
+    found = remember.recall(handle)
+    assert found is not None and found[1]["email"] == "alice@example.com"  # resumable
+    scripts = [str(h.proto.body) for h in at.get("html")]
+    assert any(remember.COOKIE in body and handle in body for body in scripts)  # cookie emitted
+    assert all("Bearer" not in body and "eyJ" not in body for body in scripts)  # never a token
+
+    button(at.sidebar, "Sign out").click()
+    at.run()
+    assert remember.recall(handle) is None  # revoked on the server
+    assert any("Max-Age=0" in str(h.proto.body) for h in at.get("html"))  # and cleared
+
+
+def test_without_the_box_nothing_is_remembered(backend: LiveBackend) -> None:
+    from frontend import remember
+
+    signed_in(backend, "alice@example.com")
+    before = remember.size()
+    at = sign_in(app_for(backend).run(), "alice@example.com")
+    assert at.sidebar.radio and remember.size() == before
+    assert "keep_handle" not in at.session_state

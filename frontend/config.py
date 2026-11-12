@@ -15,7 +15,7 @@ class FrontendConfig:
     upload_timeout_s: float = 120.0
     # a streamed answer can legitimately take a while (retrieval + model + repair)
     stream_timeout_s: float = 180.0
-    poll_interval_s: int = 3
+    poll_interval_s: int = 2
 
     @classmethod
     def from_env(cls) -> FrontendConfig:

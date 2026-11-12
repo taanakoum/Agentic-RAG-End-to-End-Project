@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-from frontend import state
+from frontend import state, theme
 from frontend.api import ApiError
 
 
 def _devices() -> None:
-    st.subheader("Where you are signed in")
+    st.subheader(":material/devices: Where you are signed in")
     try:
         sessions = state.api().auth_sessions()
     except ApiError as exc:
@@ -18,9 +18,11 @@ def _devices() -> None:
     for item in sessions:
         left, right = st.columns([5, 2])
         label = item.get("user_agent") or "Unknown device"
-        left.markdown(f"{label}{' (this one)' if item['current'] else ''}")
+        left.markdown(f"**{label}**{'  :green-badge[this device]' if item['current'] else ''}")
         left.caption(f"last used {item['last_used_at']}")
-        if not item["current"] and right.button("Sign out there", key=f"revoke_{item['id']}"):
+        if not item["current"] and right.button(
+            "Sign out there", key=f"revoke_{item['id']}", icon=":material/logout:"
+        ):
             try:
                 state.api().revoke_auth_session(item["id"])
             except ApiError as exc:
@@ -30,8 +32,8 @@ def _devices() -> None:
 
 
 def _password() -> None:
-    st.subheader("Change password")
-    with st.form("change_password", clear_on_submit=True):
+    st.subheader(":material/password: Change password")
+    with st.form("change_password", clear_on_submit=True, border=False):
         current = st.text_input("Current password", type="password", key="pw_current")
         new = st.text_input("New password", type="password", key="pw_new")
         submitted = st.form_submit_button("Change password")
@@ -53,7 +55,7 @@ def _password() -> None:
 def _verify_email(me: dict[str, object]) -> None:
     if me.get("email_verified"):
         return
-    st.subheader("Verify your email")
+    st.subheader(":material/mark_email_read: Verify your email")
     st.caption("Some features need a verified address. We email you a one-time code.")
     if st.button("Send verification email", key="send_verification"):
         try:
@@ -62,7 +64,7 @@ def _verify_email(me: dict[str, object]) -> None:
             state.fail(exc)
         else:
             st.info("Sent. In development the message is a file in data/outbox/.")
-    with st.form("verify_email", clear_on_submit=True):
+    with st.form("verify_email", clear_on_submit=True, border=False):
         token = st.text_input("Code from the email", key="verify_token")
         submitted = st.form_submit_button("Verify")
     if not submitted:
@@ -91,7 +93,7 @@ def _qr_png(uri: str) -> bytes:
 
 
 def _two_factor() -> None:
-    st.subheader("Two-factor authentication")
+    st.subheader(":material/phonelink_lock: Two-factor authentication")
     try:
         info = state.api().mfa_status()
     except ApiError as exc:
@@ -104,7 +106,7 @@ def _two_factor() -> None:
         st.caption("Each code works once if you lose your authenticator. They are shown only now.")
     if info["enabled"]:
         st.caption(f"On. Recovery codes left: {info['recovery_codes_remaining']}.")
-        with st.form("mfa_disable", clear_on_submit=True):
+        with st.form("mfa_disable", clear_on_submit=True, border=False):
             password = st.text_input("Password", type="password", key="mfa_off_password")
             code = st.text_input("Current code or a recovery code", key="mfa_off_code")
             submitted = st.form_submit_button("Turn off two-factor authentication")
@@ -135,7 +137,7 @@ def _two_factor() -> None:
     )
     st.image(_qr_png(pending["otpauth_uri"]), width=220)
     st.code(pending["secret"])
-    with st.form("mfa_confirm", clear_on_submit=True):
+    with st.form("mfa_confirm", clear_on_submit=True, border=False):
         code = st.text_input("6-digit code", key="mfa_on_code")
         submitted = st.form_submit_button("Turn on")
     if submitted:
@@ -152,7 +154,7 @@ def _two_factor() -> None:
 
 
 def _delete_account() -> None:
-    with st.expander("Delete my account"):
+    with st.expander("Delete my account", icon=":material/warning:"):
         st.warning("This permanently deletes your account, documents, conversations and memories.")
         with st.form("delete_account"):
             password = st.text_input("Password", type="password", key="delete_password")
@@ -177,13 +179,23 @@ def _delete_account() -> None:
 def render() -> None:
     st.title("Account")
     me = state.user() or {}
-    st.markdown(f"**{me.get('display_name') or me.get('email', '')}**")
-    st.caption(
-        f"{me.get('email', '')} · email "
-        f"{'verified' if me.get('email_verified') else 'not verified yet'}"
-    )
-    _verify_email(me)
-    _two_factor()
-    _devices()
-    _password()
+    name = str(me.get("display_name") or me.get("email", ""))
+    with st.container(border=True):
+        avatar, info = st.columns([1, 10], vertical_alignment="center")
+        avatar.markdown(f"### {theme.initials(name)}")
+        info.markdown(f"**{name}**")
+        info.caption(
+            f"{me.get('email', '')} · email "
+            f"{'verified' if me.get('email_verified') else 'not verified yet'}"
+        )
+    if not me.get("email_verified"):
+        with st.container(border=True):
+            _verify_email(me)
+    left, right = st.columns(2, gap="medium")
+    with left, st.container(border=True):
+        _two_factor()
+    with right, st.container(border=True):
+        _password()
+    with st.container(border=True):
+        _devices()
     _delete_account()

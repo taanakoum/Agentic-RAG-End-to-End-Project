@@ -1,0 +1,28 @@
+# Streamlit settings for the frontend (read from the working directory: run from the repo root,
+# as scripts/stack.py does).
+
+[theme]
+base = "light"
+primaryColor = "#4F46E5"            # indigo: buttons, links, focus
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6FB"
+textColor = "#1E293B"
+linkColor = "#4338CA"
+borderColor = "#E2E8F0"
+font = "Inter, 'Segoe UI', system-ui, -apple-system, sans-serif"
+headingFont = "Inter, 'Segoe UI', system-ui, -apple-system, sans-serif"
+baseRadius = "0.65rem"
+buttonRadius = "0.55rem"
+showWidgetBorder = true
+showSidebarBorder = true
+
+[client]
+toolbarMode = "minimal"             # no developer menu or "Deploy" button for users
+showErrorDetails = "type"           # never show a stack trace to a user
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+
+[server]
+runOnSave = false

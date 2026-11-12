@@ -9,7 +9,19 @@ import streamlit as st
 from frontend import state
 from frontend.api import ApiError, SessionExpired
 from frontend.errors import Presentation, describe, stream_error
-from frontend.format import STAGE_LABEL, answer_notices, citation_line, preview_title
+from frontend.format import (
+    STAGE_LABEL,
+    answer_notices,
+    citation_line,
+    preview_title,
+    safe_markdown,
+)
+
+SUGGESTIONS = [
+    "Summarise my documents in five bullet points",
+    "What deadlines or dates are mentioned?",
+    "What are the main obligations or rules?",
+]
 
 
 def _active() -> str | None:
@@ -28,10 +40,16 @@ def _select(session_id: str | None) -> None:
 def _sidebar() -> list[dict[str, Any]]:
     client = state.api()
     with st.sidebar:
-        st.subheader("Conversations")
-        if st.button("New conversation", key="new_chat", use_container_width=True):
+        if st.button(
+            "New conversation",
+            key="new_chat",
+            icon=":material/add_comment:",
+            type="primary",
+            use_container_width=True,
+        ):
             _select(None)
             st.rerun()
+        st.caption("Conversations")
         try:
             sessions = client.list_sessions()["items"]
         except ApiError as exc:
@@ -40,10 +58,12 @@ def _sidebar() -> list[dict[str, Any]]:
         if not sessions:
             st.caption("No conversations yet. Ask a question to start one.")
         for item in sessions:
-            marker = "▶ " if item["id"] == _active() else ""
+            selected = item["id"] == _active()
             if st.button(
-                marker + preview_title(item["title"]),
+                preview_title(item["title"]),
                 key=f"open_{item['id']}",
+                icon=":material/chat_bubble:" if selected else ":material/chat_bubble_outline:",
+                type="secondary" if selected else "tertiary",
                 use_container_width=True,
             ):
                 _select(item["id"])
@@ -55,21 +75,23 @@ def _settings(session: dict[str, Any]) -> None:
     """Rename, delete and the few agent options a user may change (no model or prompt)."""
     client = state.api()
     config = session.get("agent_config", {})
-    with st.expander("Conversation settings"):
+    with st.expander("Conversation settings", icon=":material/tune:"):
         title = st.text_input("Title", value=session["title"], key=f"title_{session['id']}")
-        top_k = st.number_input(
+        left, right = st.columns(2)
+        top_k = left.number_input(
             "Passages to retrieve (top-k, 0 = default)",
             min_value=0,
             max_value=30,
             value=int(config.get("top_k") or 0),
             key=f"topk_{session['id']}",
         )
-        rerank = st.checkbox(
+        right.space("small")
+        rerank = right.checkbox(
             "Re-rank passages with the cross-encoder",
             value=True if config.get("rerank") is None else bool(config["rerank"]),
             key=f"rerank_{session['id']}",
         )
-        if st.button("Save settings", key=f"save_{session['id']}"):
+        if st.button("Save settings", key=f"save_{session['id']}", icon=":material/save:"):
             try:
                 client.update_session(
                     session["id"],
@@ -82,7 +104,12 @@ def _settings(session: dict[str, Any]) -> None:
                 st.rerun()
         st.divider()
         confirm = st.checkbox("I want to delete this conversation", key=f"del_ok_{session['id']}")
-        if st.button("Delete conversation", key=f"del_{session['id']}", disabled=not confirm):
+        if st.button(
+            "Delete conversation",
+            key=f"del_{session['id']}",
+            disabled=not confirm,
+            icon=":material/delete:",
+        ):
             try:
                 client.delete_session(session["id"])
             except ApiError as exc:
@@ -100,14 +127,24 @@ def _feedback(message_id: str, stored: dict[str, Any] | None = None) -> None:
     if stored and message_id not in ratings:
         ratings[message_id] = str(stored["rating"])  # given earlier (possibly in another session)
     current = ratings.get(message_id)
-    up, down, _ = st.columns([1, 1, 8])
+    up, down, note = st.columns([1, 1, 10], vertical_alignment="center")
     chosen: str | None = None
-    if up.button("👍", key=f"up_{message_id}", type="primary" if current == "up" else "secondary"):
+    if up.button(
+        "👍",
+        key=f"up_{message_id}",
+        type="primary" if current == "up" else "tertiary",
+        help="Helpful",
+    ):
         chosen = "up"
     if down.button(
-        "👎", key=f"down_{message_id}", type="primary" if current == "down" else "secondary"
+        "👎",
+        key=f"down_{message_id}",
+        type="primary" if current == "down" else "tertiary",
+        help="Not helpful",
     ):
         chosen = "down"
+    if current and st.session_state.get("feedback_open") != message_id:
+        note.caption("Thanks for rating this answer.")
     if chosen:
         try:
             state.api().send_feedback(message_id, chosen)
@@ -126,41 +163,60 @@ def _feedback(message_id: str, stored: dict[str, Any] | None = None) -> None:
                 state.fail(exc)
             else:
                 st.session_state.pop("feedback_open", None)
-                st.success("Thanks for the feedback.")
+                st.success("Thanks for the feedback.", icon=":material/check_circle:")
+
+
+def _sources(citations: list[dict[str, Any]]) -> None:
+    with st.expander(f"Sources ({len(citations)})", icon=":material/menu_book:"):
+        for index, citation in enumerate(citations, start=1):
+            st.markdown(
+                f":material/description: **{safe_markdown(citation_line(index, citation))}**"
+            )
+            st.caption(safe_markdown(citation["excerpt"]))
 
 
 def _answer(
     response: dict[str, Any], message_id: str | None, stored: dict[str, Any] | None = None
 ) -> None:
     for level, text in answer_notices(response):
-        (st.warning if level == "warning" else st.info)(text)
-    st.markdown(response["answer"])  # an unverifiable answer was already replaced server-side
+        if level == "warning":
+            st.warning(text, icon=":material/gpp_maybe:")
+        else:
+            st.info(text, icon=":material/info:")
+    # an unverifiable answer was already replaced server-side; images are never loaded
+    st.markdown(safe_markdown(response["answer"]))
     citations = response.get("citations", [])
     if citations:
-        with st.expander(f"Sources ({len(citations)})"):
-            for index, citation in enumerate(citations, start=1):
-                st.markdown(f"**{citation_line(index, citation)}**")
-                st.caption(citation["excerpt"])
-    for number, follow_up in enumerate(response.get("follow_up_questions", [])):
-        if message_id and st.button(follow_up, key=f"fu_{message_id}_{number}"):
-            st.session_state["queued_message"] = follow_up
-            st.rerun()
+        _sources(citations)
+    follow_ups = response.get("follow_up_questions", [])
+    if follow_ups and message_id:
+        st.caption("Ask next")
+        for number, follow_up in enumerate(follow_ups):
+            if st.button(
+                follow_up,
+                key=f"fu_{message_id}_{number}",
+                type="tertiary",
+                icon=":material/subdirectory_arrow_right:",
+            ):
+                st.session_state["queued_message"] = follow_up
+                st.rerun()
     if message_id:
         _feedback(message_id, stored)
 
 
-def _history(session_id: str) -> None:
+def _history(session_id: str) -> int:
     try:
         messages = state.api().messages(session_id)
     except ApiError as exc:
         state.fail(exc)
-        return
+        return 0
     for message in messages:
         with st.chat_message(message["role"]):
             if message["role"] == "assistant" and message.get("response"):
                 _answer(message["response"], message["id"], message.get("feedback"))
             else:
-                st.markdown(message["content"])
+                st.markdown(safe_markdown(message["content"]))
+    return len(messages)
 
 
 # ------------------------------------------------------------------ sending
@@ -170,15 +226,17 @@ def _stream(session_id: str, text: str, key: str) -> Presentation | None:
     """Run one streamed turn. Returns the problem to show (with retry state kept), or None."""
     status_box = st.empty()
     answer_box = st.empty()
+    status_box.caption(":material/hourglass_top: Sending your question...")
     shown = ""
     try:
         for event in state.api().chat_stream(session_id, text, key):
             kind = event.get("type")
             if kind == "status":
-                status_box.caption(STAGE_LABEL.get(str(event["stage"]), ""))
+                label = STAGE_LABEL.get(str(event["stage"]), "")
+                status_box.caption(f":material/progress_activity: {label}")
             elif kind == "token":
                 shown += str(event["text"])
-                answer_box.markdown(shown + "▌")
+                answer_box.markdown(safe_markdown(shown) + "▌")
             elif kind == "error":
                 status_box.empty()
                 answer_box.empty()
@@ -226,7 +284,7 @@ def _run_inflight() -> None:
     problem: Presentation | None = inflight.get("problem")
     if problem is None:
         with st.chat_message("user"):
-            st.markdown(inflight["text"])
+            st.markdown(safe_markdown(inflight["text"]))
         with st.chat_message("assistant"):
             outcome = _stream(inflight["session"], inflight["text"], inflight["key"])
         if outcome is None:
@@ -237,7 +295,7 @@ def _run_inflight() -> None:
     # a failed attempt waits for an explicit decision; other interactions never re-ask
     state.show(problem)
     st.caption(f"Your message: {inflight['text']}")
-    if problem.retryable and st.button("Try again", key="retry_send"):
+    if problem.retryable and st.button("Try again", key="retry_send", icon=":material/refresh:"):
         if not problem.same_key_retry:
             # a failed turn cannot be replayed under its key: this is a new request
             inflight["key"] = state.api().new_idempotency_key()
@@ -265,6 +323,18 @@ def _resolve_active(sessions: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
 
+def _welcome() -> None:
+    with st.container(border=True):
+        st.markdown("#### :material/waving_hand: What would you like to know?")
+        st.caption("Ask a question about your uploaded documents.")
+        for column, suggestion in zip(st.columns(len(SUGGESTIONS)), SUGGESTIONS, strict=True):
+            if column.button(
+                suggestion, key=f"suggest_{SUGGESTIONS.index(suggestion)}", use_container_width=True
+            ):
+                st.session_state["queued_message"] = suggestion
+                st.rerun()
+
+
 # ------------------------------------------------------------------ page
 
 
@@ -276,8 +346,8 @@ def render() -> None:
     if current:
         _settings(current)
         _history(current["id"])
-    else:
-        st.caption("Ask a question about your uploaded documents.")
+    elif not st.session_state.get("inflight"):
+        _welcome()
     queued = st.session_state.pop("queued_message", None)
     prompt = st.chat_input("Ask about your documents") or queued
     if prompt and not st.session_state.get("inflight"):

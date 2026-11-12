@@ -42,7 +42,8 @@ def _preferences() -> None:
 
 
 def _add_form() -> None:
-    with st.form("add_memory", clear_on_submit=True):
+    with st.form("add_memory", clear_on_submit=True, border=True):
+        st.markdown("##### :material/add: Add a memory")
         content = st.text_area("Something to remember", key="new_memory", max_chars=2000)
         kind = st.selectbox("Kind", KINDS, key="new_memory_kind")
         submitted = st.form_submit_button("Add memory")
@@ -63,7 +64,10 @@ def _add_form() -> None:
 
 def _item(memory: dict[str, Any]) -> None:
     with st.container(border=True):
-        st.caption(f"{memory['kind']} · importance {memory['importance']} · {memory['source']}")
+        st.caption(
+            f":material/label: {memory['kind']} · importance {memory['importance']} · "
+            f"{'added by you' if memory['source'] == 'user' else 'learned from a chat'}"
+        )
         edited = st.text_area(
             "Text",
             value=memory["content"],
@@ -91,8 +95,13 @@ def _item(memory: dict[str, Any]) -> None:
 
 def render() -> None:
     st.title("Memory")
-    _preferences()
-    st.subheader("What is remembered")
+    st.caption(
+        "Facts the assistant may use in later conversations. Nothing is remembered unless you "
+        "switch it on, and you can edit or delete anything here."
+    )
+    with st.container(border=True):
+        _preferences()
+    st.subheader(":material/psychology: What is remembered")
     try:
         memories = state.api().list_memories()["items"]
     except ApiError as exc:
@@ -103,7 +112,7 @@ def render() -> None:
     for memory in memories:
         _item(memory)
     _add_form()
-    with st.expander("Danger zone"):
+    with st.expander("Danger zone", icon=":material/warning:"):
         sure = st.checkbox("I want to delete ALL my memories", key="reset_ok")
         if st.button("Reset memory", key="reset_memory", disabled=not sure):
             try:
