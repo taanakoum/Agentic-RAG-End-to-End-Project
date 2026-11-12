@@ -105,7 +105,7 @@ def db_scalar(sql: str, **params: Any) -> Any:
         engine.dispose()
 
 
-def button(at: AppTest, label: str) -> Any:
+def button(at: Any, label: str) -> Any:
     matches = [b for b in at.button if b.label == label]
     assert matches, f"no button {label!r}; have {[b.label for b in at.button]}"
     return matches[0]

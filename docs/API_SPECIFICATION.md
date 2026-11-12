@@ -109,3 +109,11 @@ Another user's session is a 404 identical to an unknown id. Agent options are li
 `RAGResponse` (schema_version "1.0", unknown fields rejected): `{answer, citations[{document_id, document_name, page_number, chunk_id, excerpt}], insufficient_evidence, clarification_needed, follow_up_questions, metadata{execution_mode, model_name, retrieval_used, reranking_used, answer_support supported|inference|not_found|none, cache_status hit|miss|bypass|error|none, llm_calls, degraded[], route}}`. Citations are built by the server from stored data; `[1]`, `[2]` markers in `answer` index into `citations` in order.
 SSE events (JSON `data:` per frame, `event:` = `type`): `start{session_id, execution_id, user_message_id, replayed}`, `status{stage: retrieving|generating|repairing|verifying|saving}`, `token{index, text}` (slices of the validated, already saved answer; concatenated = `answer`), `citation{index, citation}`, `complete{assistant_message_id, response}`, `error{code, message, retryable, retry_after_s}`; `: keep-alive` comments every 15 s. After `start` exactly one terminal event (`complete` or `error`) follows. A client disconnect cancels the turn (the user message stays, no assistant message exists, the session is free). Replaying the key of a completed turn streams the stored answer (`start.replayed=true`, no `status`, no model call).
 `degraded` values: `unverified_answer` (the safe fallback replaced an answer that could not be verified), `rewrite_fallback`, `memory_unavailable`, `rerank_timeout`, `rerank_unavailable`, `dense_unavailable`, `sparse_unavailable`.
+
+## Feedback (Phase 9; Bearer required, verified email when `REQUIRE_VERIFIED_EMAIL=true`)
+| Method | Path | Body | Success | Errors |
+|---|---|---|---|---|
+| POST | /feedback | `{message_id, rating: "up"\|"down", comment? (<= 1000 chars; blank = none)}` | 200 `{message_id, rating, comment, updated_at}`; a second call updates the same row | 401, 403, 404 (not the caller's assistant message, an unknown id or a deleted conversation: all identical), 422, 429 |
+| DELETE | /feedback/{message_id} | | 204, idempotent (also when there was none or it is not the caller's) | 401, 403, 422 |
+
+Note: `agent_config.mode` only accepts `single` (ADR-028); the "Sessions" row above that mentions `multi` is historical.

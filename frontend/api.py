@@ -262,6 +262,9 @@ class ApiClient:
             body["agent_config"] = agent_config
         return self._json("POST", "/sessions", json=body)
 
+    def get_session(self, session_id: str) -> JSON:
+        return self._json("GET", f"/sessions/{session_id}")
+
     def list_sessions(self, limit: int = 50, offset: int = 0) -> JSON:
         return self._json("GET", "/sessions", params={"limit": limit, "offset": offset})
 

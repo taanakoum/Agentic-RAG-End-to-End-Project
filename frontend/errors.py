@@ -23,10 +23,16 @@ class Presentation:
     fields: dict[str, str] = field(default_factory=dict[str, str])  # field name -> message
     retryable: bool = False  # only where repeating the SAME request is safe
     request_id: str | None = None
+    code: str = ""
+    # the connection broke: the turn may have finished, so asking again with the SAME key is safe
+    # (it replays). After a failed turn the backend refuses that key: a retry is a new request.
+    same_key_retry: bool = False
 
     def with_reference(self) -> str:
         return f"{self.message} (reference: {self.request_id})" if self.request_id else self.message
 
+
+SAME_KEY_CODES = frozenset({"STREAM_INTERRUPTED", "NETWORK_ERROR", "NETWORK_TIMEOUT"})
 
 _MESSAGES: dict[str, tuple[Kind, str, bool]] = {
     "INVALID_CREDENTIALS": ("credentials", "The email or password is not correct.", False),
@@ -140,12 +146,20 @@ def describe(error: ApiError) -> Presentation:
             "Please correct the highlighted fields." if fields else "Please check your input.",
             fields,
             request_id=error.request_id,
+            code=error.code,
         )
     if error.code in _MESSAGES:
         kind, message, retryable = _MESSAGES[error.code]
         if error.code in {"RATE_LIMIT_EXCEEDED", "MODEL_RATE_LIMITED"} and error.retry_after_s:
             message = f"{message} Try again in about {error.retry_after_s} seconds."
-        return Presentation(kind, message, retryable=retryable, request_id=error.request_id)
+        return Presentation(
+            kind,
+            message,
+            retryable=retryable,
+            request_id=error.request_id,
+            code=error.code,
+            same_key_retry=error.code in SAME_KEY_CODES,
+        )
     kind_by_status: Kind = "outage" if error.status >= 500 else "other"
     return Presentation(
         kind_by_status,

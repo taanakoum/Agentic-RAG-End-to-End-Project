@@ -208,3 +208,20 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Phase 8 exit ("evaluations reproducible with documented commands; traces usable"): commands in docs/EVALUATION.md produced the committed reports; traces verified with in-memory spans across the API and a real Celery worker and exported over OTLP/HTTP to a local receiver. NOT verified against Phoenix/Langfuse (KI-037). Real-model generation evaluation was not re-run (daily quota; the 2026-11-11 report stands).
 - Not done / blocked: Docker (KI-014); Phoenix/Langfuse verification (KI-037); tracing overhead under load (KI-038).
 - Usage: could not be measured.
+
+---
+## Entry 14: Phase 9 Streamlit frontend (gate G8) and the feedback API
+- Date: 2026-11-12. Branch feature/phase-6-single-agent. Commits 2938c1e (feedback API), 30086ac (frontend + client tests) and the closing commit that follows this entry.
+- User instruction applied: Opus is used for planning when a task is too complex or stuck (CLAUDE.md rule); no escalation was needed in this phase (the one unexplained item, KI-045, is a timing flake and was recorded instead).
+- Built: backend `POST/DELETE /feedback` + table `message_feedback` (migration 0010, spec 06 listed it, it did not exist); `frontend/` (API client with token refresh, typed errors and SSE; error wording by kind; views: sign-in/register/MFA step, chat with streaming, citations, feedback, conversation settings; documents with live status, retry, re-index, delete; memory; account); `tests/live_backend.py` (the real app on a real socket in its own thread); docs/FRONTEND.md, ADR-031, SECURITY and API_SPECIFICATION updates; KI-041..045.
+- Commands and ACTUAL results:
+  - `ruff format`, `ruff check .`, `pyright` (strict, now including `frontend/`) -> clean.
+  - Feedback: `pytest backend/tests/integration/test_feedback_api.py` -> 10 passed; mutation checks: removing the assistant-role filter and the live-conversation filter each made a test fail; removing `Message.user_id` did not (equivalent: `Conversation.user_id` enforces the same ownership).
+  - Frontend: `test_frontend_pure.py` 18, `test_frontend_api.py` 11, `test_frontend_ui.py` 6, `test_frontend_flows.py` 11 (28 integration tests against the live backend with a real Celery worker; only the model is scripted) -> all passed.
+  - Mutation checks (each made a test FAIL, then the file was restored): forged active session not dropped; same-key retry codes removed; token refresh disabled; sign-out not wiping state; feedback not sent. Two first-round survivors were real findings: the sign-out test did not check that per-user state is wiped (strengthened: the next person in the same browser session sees nothing), and a UI guard hiding unverified answers was redundant with the backend's replacement text (removed).
+  - Full suite `uv run --no-sync pytest backend/tests -q` -> 1080 passed, 1 skipped, 1 failed (1382 s): only `test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_reads` (KI-045).
+  - `streamlit run frontend/app.py` (headless) -> `/_stcore/health` 200 and index 200; the documented uvicorn command -> `/api/v1/health/live` and `/ready` 200 (PostgreSQL, Redis, Qdrant, storage ok).
+- Defects found by the tests: the UI assumed the same idempotency key could retry any failed turn, but the backend (correctly) refuses to replay a FAILED turn: same-key retry is now only used after a broken connection; a forged active-session id was kept when the person had no conversations (now validated against the server on every render); the failed question was shown twice after an error.
+- Gate G8 ("real frontend-to-backend workflows pass; cannot see other users' data by manipulating state"): the workflows pass through the real script and real HTTP; manipulation tests at UI and API level pass. NOT verified in a real browser (KI-042).
+- Not done / blocked: real-browser check; Docker (KI-014); MFA setup / verification / reset / deletion screens (KI-044).
+- Usage: could not be measured.

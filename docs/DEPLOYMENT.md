@@ -48,6 +48,7 @@ An S3-compatible store can replace the local volume (see ADR-011; verified again
 `scripts/dev_services.ps1` starts PostgreSQL, Redis and Qdrant from `C:\Users\ali_a\devtools`.
 Run tests with `export UV_PROJECT_ENVIRONMENT=C:/Users/ali_a/devtools/venv` then
 `uv run --no-sync pytest`. No cloud account or paid service is needed anywhere.
+The Streamlit UI (optional extra `frontend`) is started as described in docs/FRONTEND.md.
 
 ## Language model (free hosted API; no local model)
 The platform talks to ONE OpenAI-compatible endpoint, so any of these free options is configuration only. Nothing has been created for you and no account was opened; names and free-tier limits change, so confirm on the provider's site.

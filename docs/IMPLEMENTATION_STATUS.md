@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 9 (Frontend, Streamlit; gate G8). Phases 2, 3, 4, 5, 6 and 8 VERIFIED natively (Phase 6 also against a live free Gemini model; Phase 7 REMOVED). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
-**Next step:** (a) User rotates the Gemini key and decides how to handle local commit a555334 before any push (KI-040); installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1`. (b) Phase 9: read docs/spec/ for the Streamlit frontend (login/register, upload + status, chat with SSE streaming and citations, history, memory view) and docs/spec/09 gate G8; start services first (`scripts/dev_services.ps1 start`); the API contract is docs/API_SPECIFICATION.md. Free-tier quota: keep real-model runs small (docs/DEPLOYMENT.md calibration).
+**Current phase:** 10 (Test + Harden, gate G9). Phases 2, 3, 4, 5, 6, 8 and 9 VERIFIED natively (Phase 6 also against a live free Gemini model; Phase 7 REMOVED; Phase 9 without a real browser, KI-042). Phase 1 TESTED natively; G1 BLOCKED on Docker (KI-014).
+**Next step:** (a) User rotates the Gemini key and decides how to handle local commit a555334 before any push (KI-040); opens the UI once in a browser (docs/FRONTEND.md, KI-042); installs WSL2 and runs the Docker steps in KI-014 / docs/DEPLOYMENT.md, then `powershell -File scripts/verify_g1.ps1`. (b) Phase 10: read docs/spec/07-testing-eval-ops.md and docs/spec/09 (gate G9); start with the flaky `test_event_loop_stays_responsive...` (KI-045), then the coverage/security/chaos checklist. Start services first (`scripts/dev_services.ps1 start`).
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -19,7 +19,7 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | 6 Single-agent | G6 | VERIFIED (scripted-model suite + live Gemini free tier) | Log entries 11, 12; ADR-026/027 |
 | 7 Multi-agent | G7 | REMOVED (user decision 2026-11-11; single agent only) | ADR-028 |
 | 8 Eval + Observability | - | VERIFIED (native; OTLP verified against a local receiver only, KI-037) | Log entry 13; ADR-030; docs/EVALUATION.md, docs/OBSERVABILITY.md |
-| 9 Frontend | G8 | NOT_STARTED | |
+| 9 Frontend | G8 | VERIFIED (AppTest + live backend; no real browser, KI-042) | Log entry 14; ADR-031; docs/FRONTEND.md |
 | 10 Test + Harden | G9 | NOT_STARTED | |
 | 11 Load | G10 | NOT_STARTED | |
 | 12 Docker + Deploy | G11, G12 | NOT_STARTED | |

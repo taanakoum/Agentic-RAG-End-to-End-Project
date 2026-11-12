@@ -130,9 +130,7 @@ def _feedback(message_id: str) -> None:
 def _answer(response: dict[str, Any], message_id: str | None) -> None:
     for level, text in answer_notices(response):
         (st.warning if level == "warning" else st.info)(text)
-    degraded_unverified = "unverified_answer" in response.get("metadata", {}).get("degraded", [])
-    if not degraded_unverified:
-        st.markdown(response["answer"])
+    st.markdown(response["answer"])  # an unverifiable answer was already replaced server-side
     citations = response.get("citations", [])
     if citations:
         with st.expander(f"Sources ({len(citations)})"):
@@ -221,25 +219,46 @@ def _run_inflight() -> None:
     inflight = st.session_state.get("inflight")
     if not inflight:
         return
-    with st.chat_message("user"):
-        st.markdown(inflight["text"])
-    if inflight.get("problem"):
-        # a failed attempt waits for an explicit decision; other interactions never re-ask
-        state.show(inflight["problem"])
-        if inflight["problem"].retryable and st.button("Try again", key="retry_send"):
-            # the SAME idempotency key: if the first attempt did finish, this replays its answer
-            inflight["problem"] = None
-            st.rerun()
-        elif not inflight["problem"].retryable:
-            st.session_state.pop("inflight", None)
-        return
-    with st.chat_message("assistant"):
-        problem = _stream(inflight["session"], inflight["text"], inflight["key"])
+    problem: Presentation | None = inflight.get("problem")
     if problem is None:
+        with st.chat_message("user"):
+            st.markdown(inflight["text"])
+        with st.chat_message("assistant"):
+            outcome = _stream(inflight["session"], inflight["text"], inflight["key"])
+        if outcome is None:
+            st.session_state.pop("inflight", None)
+            st.rerun()  # reload the saved history from the server
+        inflight["problem"] = outcome
+        st.rerun()
+    # a failed attempt waits for an explicit decision; other interactions never re-ask
+    state.show(problem)
+    st.caption(f"Your message: {inflight['text']}")
+    if problem.retryable and st.button("Try again", key="retry_send"):
+        if not problem.same_key_retry:
+            # a failed turn cannot be replayed under its key: this is a new request
+            inflight["key"] = state.api().new_idempotency_key()
+        inflight["problem"] = None
+        st.rerun()
+    elif not problem.retryable:
         st.session_state.pop("inflight", None)
-        st.rerun()  # reload the saved history from the server
-    inflight["problem"] = problem
-    st.rerun()
+
+
+def _resolve_active(sessions: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The open conversation, or None. An id that is not the person's own (forged client state, a
+    deleted conversation) is dropped; the backend is the judge, not the client."""
+    active = _active()
+    if not active:
+        return None
+    listed = next((s for s in sessions if s["id"] == active), None)
+    if listed is not None:
+        return listed
+    try:
+        return state.api().get_session(active)
+    except ApiError as exc:
+        if exc.status not in {403, 404, 422}:
+            state.fail(exc)
+        _select(None)
+        return None
 
 
 # ------------------------------------------------------------------ page
@@ -247,11 +266,8 @@ def _run_inflight() -> None:
 
 def render() -> None:
     sessions = _sidebar()
+    current = _resolve_active(sessions)
     active = _active()
-    current = next((s for s in sessions if s["id"] == active), None)
-    if active and current is None and sessions:
-        _select(None)
-        active = None
     st.title(current["title"] if current else "New conversation")
     if current:
         _settings(current)
