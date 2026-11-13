@@ -122,3 +122,42 @@ turn KI-046 into a short note with the latest measured number (93.2% on 2026-11-
 - `docs/ARCHITECTURE_DECISIONS.md`: one ADR for the retrieval cache and one for the LLM memory extractor;
   `docs/OBSERVABILITY.md` for DB spans; `docs/EXECUTION_LOG.md` entry with every command and result.
 - Final: full suite + ruff + pyright; report the exact counts. Commit.
+
+### 12. Reduce re-ranking time (added 2026-11-13 by the owner's request; KI-023)
+Facts to start from (measured): the default cross-encoder `BAAI/bge-reranker-v2-m3-int8` (XLM-R large,
+int8 ONNX via FastEmbed) costs ~0.45 s per candidate on this laptop (4 physical / 8 logical cores):
+~2.2 s for the default 5 candidates, 3.0 s of a 5.5 s question in a real trace. Inputs are
+`section_path + text` cut at `RERANK_MAX_CHARS=2000` (chunks are ~320 tokens). `FastEmbedReranker` does
+not pass `threads` to `TextCrossEncoder`; scoring runs on the `INFERENCE_THREADS=2` pool, so two
+concurrent searches queue. Smaller rerankers measured earlier (MiniLM-L6/L12, jina-v1-turbo) lost
+quality on the synthetic set; `jinaai/jina-reranker-v2-base-multilingual` (FastEmbed-supported) was never
+measured. Cross-encoder cost grows with candidates x sequence length.
+
+Approach: **measure first, then change defaults only where quality holds.**
+1. `evaluation/retrieval/rerank_bench.py`: for the synthetic dataset (`evaluation/chunking/corpus.py`)
+   AND the real-document dataset of item 6 (do item 6 first), run the production retriever with these
+   knobs and record hit@1, hit@3, MRR and rerank latency p50/p95 (3 repeats, warm models):
+   - model: current, `jinaai/jina-reranker-v2-base-multilingual`, `Xenova/ms-marco-MiniLM-L-12-v2`
+   - `RERANK_MAX_CHARS`: 2000, 1200, 800
+   - ONNX threads: library default, 4, 8 (pass `threads=` through a new `RERANK_THREADS` setting)
+   - candidates: 5, 8
+   - adaptive skip (step 3): off / on
+   Write `evaluation/reports/rerank_bench.md/json` with hardware, versions and honest limits.
+2. Wire the knobs: `RERANK_THREADS` (0 = library default) passed to `TextCrossEncoder(threads=...)`;
+   keep `RERANK_MAX_CHARS` and `RERANK_CANDIDATES`. Make `INFERENCE_THREADS` and the ONNX threads not
+   oversubscribe the CPU (document the rule: pool size x onnx threads <= logical cores).
+3. Adaptive skip (only if the benchmark shows it keeps quality): skip the cross-encoder when fusion is
+   already confident, e.g. the same chunk is rank 1 in BOTH the dense and the sparse list and the RRF
+   score margin to the second candidate exceeds a threshold (`RERANK_SKIP_MARGIN`, default from the
+   benchmark; 0 disables it). Record `rerank_skipped` in `RetrievalResult` (timings/degraded-style
+   metadata) and in the span. Unit tests for the decision; integration test that a confident query does
+   not call the reranker and an ambiguous one does.
+4. Warm the reranker at API start-up by default (`WARM_MODELS_ON_STARTUP=true` in the generated `.env`
+   and `scripts/stack.py` docs) so the first question does not pay the model load; verify with a trace.
+5. Choose new defaults with this rule: on BOTH datasets, hit@1 and MRR within one question of the current
+   default; among those, the lowest p50 rerank latency. If nothing qualifies, keep the current defaults
+   and say so. Update `docs/EVALUATION.md`, the README results table if numbers change, KI-023 with the new
+   measured numbers, and an ADR.
+Tests: settings plumbing (threads passed through), skip decision, retriever behaviour with skip on/off
+(KeywordReranker test double counts calls), no change to authorization filtering. Mutation: make the
+skip rule always skip -> the ambiguous-query test fails.
