@@ -60,10 +60,16 @@ async def test_a_chat_turn_is_one_trace_from_the_http_request_down_to_the_model_
         "agent.check_output",
         "agent.finalize",
         "retrieval.search",
-        "retrieval.rerank",
         "llm.call",
     }
     assert expected <= in_trace, expected - in_trace
+    # the cross-encoder either ran (its own span) or was skipped because fusion was confident,
+    # which the search span must then say (ADR-038)
+    if "retrieval.rerank" not in in_trace:
+        (search,) = [s for s in th.named("retrieval.search") if th.trace_id_of(s) == trace]
+        assert (
+            search.attributes is not None and search.attributes["retrieval.rerank_skipped"] is True
+        )
     assert any(name.startswith("POST") for name in in_trace)  # the FastAPI server span
     assert response.headers["x-trace-id"] == trace  # a user can quote it in a bug report
 
