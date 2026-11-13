@@ -64,6 +64,8 @@ QDRANT_URL=http://127.0.0.1:6333
 # ---------------------------------------------------------------- documents
 # docling = best layout understanding (first run downloads models, slower); light = fast, simple
 PDF_PIPELINE=docling
+# load the search and re-ranking models when the API starts (the first question is then not slow)
+WARM_MODELS_ON_STARTUP=true
 
 # ---------------------------------------------------------------- language model (free hosted API)
 # Any OpenAI-compatible endpoint works. Get a free key from the provider, paste it below, restart.

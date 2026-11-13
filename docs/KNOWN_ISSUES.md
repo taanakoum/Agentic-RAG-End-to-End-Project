@@ -41,7 +41,7 @@ Accepted limitations, trade-offs and planned work. "Plan" says when it will be l
 | ID | Limitation | Plan |
 |---|---|---|
 | KI-021 | Docling costs about 1.7 s per page on a laptop CPU, plus a cold start; the first PDF after a start is slow (a 3-page PDF took 24 s to parse in a real trace). `PDF_PIPELINE=light` is the fast fallback | Measure on target hardware |
-| KI-023 | The default re-ranker (bge-reranker-v2-m3, int8) costs about 0.45 s per candidate on CPU (3 s of a 5.5 s question in a real trace); concurrent searches queue on `INFERENCE_THREADS`. Smaller re-rankers were measured and were worse than no re-ranking on the evaluation data | Options: GPU, caching, `RERANK_ENABLED=false` (10 ms hybrid) |
+| KI-023 | The default re-ranker (bge-reranker-v2-m3, int8) costs ~2-4 s per question on a laptop CPU (5 candidates). Measured knobs (ADR-038): shorter inputs and smaller models lose quality, explicit ONNX thread counts are not faster; adaptive skip (default margin 0.1) skips ~10% of questions with no measured quality loss; models are warmed at start-up for local runs | GPU, or `RERANK_ENABLED=false` (10 ms hybrid) where the quality trade-off is acceptable |
 | KI-024 | The Qdrant filter lists the caller's readable document ids; a user with thousands of documents sends a large filter on every query | Measure in Phase 11 |
 | KI-022 | The only concurrency measurement so far is a single-client benchmark on a laptop (`load_testing/concurrency_bench.py`); it shows the event loop stays responsive, not capacity | Phase 11 (Locust is installed; scenarios not written yet) |
 | KI-038 | Tracing overhead under load is unmeasured (it adds a little event-loop work) | Phase 11 |

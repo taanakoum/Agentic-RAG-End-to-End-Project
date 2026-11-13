@@ -132,7 +132,8 @@ async def test_a_knowledge_base_question_gets_a_cited_validated_persisted_answer
     assert citation.document_id == str(doc) and citation.document_name == "handbook.pdf"
     assert citation.page_number == 1  # from stored metadata, not from the model
     assert citation.excerpt == "Files larger than 25 megabytes are rejected by the gateway."
-    assert r.metadata.route == "kb" and r.metadata.retrieval_used and r.metadata.reranking_used
+    # reranking may be skipped when fusion is already confident (RERANK_SKIP_MARGIN, ADR-038)
+    assert r.metadata.route == "kb" and r.metadata.retrieval_used
     assert (r.metadata.execution_mode, r.metadata.llm_calls) == ("single", 1)
     assert r.metadata.cache_status == "miss" and r.metadata.answer_support == "supported"
     assert r.metadata.model_name == "scripted-model" and r.metadata.degraded == []

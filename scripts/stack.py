@@ -135,6 +135,8 @@ def start(args: argparse.Namespace) -> int:
 
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "backend"), str(ROOT)])}
     env.setdefault("FRONTEND_API_URL", f"http://127.0.0.1:{args.api_port}/api/v1")
+    # load the embedding + re-ranking models at API start-up, not on the first question
+    env.setdefault("WARM_MODELS_ON_STARTUP", "true")
     python = sys.executable
 
     if not args.no_migrate:

@@ -1,0 +1,866 @@
+{
+  "meta": {
+    "date": "2026-11-13",
+    "hardware": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel, Windows, CPU only",
+    "versions": {
+      "fastembed": "0.9.1",
+      "onnxruntime": "1.31.1",
+      "numpy": "2.5.4"
+    },
+    "questions": {
+      "synthetic": 36,
+      "real": 28
+    },
+    "pool": 8,
+    "latency_questions": 8,
+    "repeats": 3
+  },
+  "baseline_fused_only": {
+    "model": "(no rerank)",
+    "chars": 0,
+    "candidates": 0,
+    "margin": 0.0,
+    "quality": {
+      "synthetic": {
+        "n": 36.0,
+        "top1": 25.0,
+        "top3": 32.0,
+        "mrr_sum": 28.833333333333332,
+        "skipped": 0.0
+      },
+      "real": {
+        "n": 28.0,
+        "top1": 14.0,
+        "top3": 19.0,
+        "mrr_sum": 17.333333333333332,
+        "skipped": 0.0
+      }
+    }
+  },
+  "quality_grid": [
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 1200,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 12.0,
+          "top3": 26.0,
+          "mrr_sum": 20.583333333333332,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 20.0,
+          "top3": 21.0,
+          "mrr_sum": 21.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 1200,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 12.0,
+          "top3": 26.0,
+          "mrr_sum": 19.979761904761904,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 21.0,
+          "top3": 22.0,
+          "mrr_sum": 22.166666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 800,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 11.0,
+          "top3": 28.0,
+          "mrr_sum": 20.183333333333334,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 19.0,
+          "top3": 20.0,
+          "mrr_sum": 20.25,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 800,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 10.0,
+          "top3": 26.0,
+          "mrr_sum": 19.027380952380952,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 19.0,
+          "top3": 20.0,
+          "mrr_sum": 20.75,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 28.0,
+          "top3": 32.0,
+          "mrr_sum": 30.4,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 16.0,
+          "top3": 20.0,
+          "mrr_sum": 18.75,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 28.0,
+          "top3": 31.0,
+          "mrr_sum": 30.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 17.0,
+          "top3": 20.0,
+          "mrr_sum": 19.159523809523808,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 1200,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 18.0,
+          "top3": 30.0,
+          "mrr_sum": 24.23333333333333,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 17.0,
+          "top3": 21.0,
+          "mrr_sum": 19.5,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 1200,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 17.0,
+          "top3": 28.0,
+          "mrr_sum": 22.849999999999998,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.126190476190477,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 800,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 16.0,
+          "top3": 27.0,
+          "mrr_sum": 22.71666666666666,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 16.0,
+          "top3": 19.0,
+          "mrr_sum": 18.45,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 800,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 15.0,
+          "top3": 25.0,
+          "mrr_sum": 21.227380952380948,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 17.0,
+          "top3": 19.0,
+          "mrr_sum": 19.141666666666666,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 30.0,
+          "top3": 33.0,
+          "mrr_sum": 31.53333333333333,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 20.0,
+          "top3": 22.0,
+          "mrr_sum": 21.25,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 30.0,
+          "top3": 33.0,
+          "mrr_sum": 31.458333333333332,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 20.0,
+          "top3": 21.0,
+          "mrr_sum": 21.45,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 1200,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 15.0,
+          "top3": 23.0,
+          "mrr_sum": 21.316666666666666,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 20.0,
+          "top3": 22.0,
+          "mrr_sum": 21.25,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 1200,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 14.0,
+          "top3": 22.0,
+          "mrr_sum": 19.903571428571425,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 20.0,
+          "top3": 21.0,
+          "mrr_sum": 21.4,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 800,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 13.0,
+          "top3": 25.0,
+          "mrr_sum": 20.38333333333333,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 19.0,
+          "top3": 21.0,
+          "mrr_sum": 20.333333333333332,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 800,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 11.0,
+          "top3": 23.0,
+          "mrr_sum": 18.530952380952378,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 19.0,
+          "top3": 19.0,
+          "mrr_sum": 20.4,
+          "skipped": 0.0
+        }
+      }
+    }
+  ],
+  "skip": [
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.1,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 4.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 2.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.2,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.3,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.4,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.5,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.6,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 5,
+      "margin": 0.8,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 21.0,
+          "mrr_sum": 20.166666666666664,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.0,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.1,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 4.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 2.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.2,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.3,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.4,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.5,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 2.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.6,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "candidates": 8,
+      "margin": 0.8,
+      "quality": {
+        "synthetic": {
+          "n": 36.0,
+          "top1": 34.0,
+          "top3": 34.0,
+          "mrr_sum": 34.0,
+          "skipped": 0.0
+        },
+        "real": {
+          "n": 28.0,
+          "top1": 18.0,
+          "top3": 22.0,
+          "mrr_sum": 20.666666666666668,
+          "skipped": 0.0
+        }
+      }
+    }
+  ],
+  "latency": [
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "threads": 0,
+      "candidates": 5,
+      "p50_ms": 4716.058999998495,
+      "p95_ms": 7293.420400004834,
+      "samples": 24.0
+    },
+    {
+      "model": "jinaai/jina-reranker-v2-base-multilingual",
+      "chars": 2000,
+      "threads": 0,
+      "candidates": 5,
+      "p50_ms": 5349.972800002433,
+      "p95_ms": 6641.901700058952,
+      "samples": 24.0
+    },
+    {
+      "model": "Xenova/ms-marco-MiniLM-L-12-v2",
+      "chars": 2000,
+      "threads": 0,
+      "candidates": 5,
+      "p50_ms": 2012.4315998982638,
+      "p95_ms": 2384.7916000522673,
+      "samples": 24.0
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 1200,
+      "threads": 0,
+      "candidates": 5,
+      "p50_ms": 6373.871800024062,
+      "p95_ms": 10410.241900011897,
+      "samples": 24.0
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 800,
+      "threads": 0,
+      "candidates": 5,
+      "p50_ms": 3844.231400056742,
+      "p95_ms": 8551.083999918774,
+      "samples": 24.0
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "threads": 4,
+      "candidates": 5,
+      "p50_ms": 5345.727899810299,
+      "p95_ms": 8008.693600073457,
+      "samples": 24.0
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "threads": 8,
+      "candidates": 5,
+      "p50_ms": 3516.317249974236,
+      "p95_ms": 5792.464199941605,
+      "samples": 24.0
+    },
+    {
+      "model": "BAAI/bge-reranker-v2-m3-int8",
+      "chars": 2000,
+      "threads": 0,
+      "candidates": 8,
+      "p50_ms": 4970.165099948645,
+      "p95_ms": 6723.895800067112,
+      "samples": 24.0
+    }
+  ]
+}

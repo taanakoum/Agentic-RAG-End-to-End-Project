@@ -183,6 +183,15 @@ class Settings(BaseSettings):
     rerank_candidates: int = Field(default=5, ge=1, le=200)
     rerank_timeout_s: float = Field(default=10.0, gt=0)
     rerank_max_chars: int = Field(default=2000, ge=100)
+    # ONNX Runtime threads of ONE cross-encoder call (0 = the library default). Keep
+    # INFERENCE_THREADS x RERANK_THREADS <= logical cores (docs/ARCHITECTURE_DECISIONS.md, ADR-038).
+    rerank_threads: int = Field(default=0, ge=0, le=64)
+    # skip the cross-encoder when fusion is confident: the best chunk is rank 1 in both lists and
+    # its RRF score leads the runner-up by at least this RELATIVE margin (0 = never skip;
+    # app/retrieval/skip.py)
+    # 0.1 = no quality loss on either dataset, 6 of 64 questions skip the cross-encoder
+    # (evaluation/reports/rerank_bench.md)
+    rerank_skip_margin: float = Field(default=0.1, ge=0.0, le=1.0)
     # retrieval cache (ranked chunk ids per user, query and knowledge-base version; ADR-036)
     retrieval_cache_enabled: bool = True
     retrieval_cache_ttl_s: int = Field(default=600, ge=1)

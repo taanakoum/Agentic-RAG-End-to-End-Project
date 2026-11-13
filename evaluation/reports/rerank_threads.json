@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "model": "BAAI/bge-reranker-v2-m3-int8",
+    "candidates": 5,
+    "max_chars": 2000,
+    "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "logical_cores": 8
+  },
+  "rows": [
+    {
+      "threads": "default",
+      "calls": 48,
+      "p50_ms": 4106,
+      "p95_ms": 5327
+    },
+    {
+      "threads": 2,
+      "calls": 48,
+      "p50_ms": 5314,
+      "p95_ms": 7986
+    },
+    {
+      "threads": 4,
+      "calls": 48,
+      "p50_ms": 4125,
+      "p95_ms": 5669
+    },
+    {
+      "threads": 8,
+      "calls": 48,
+      "p50_ms": 4376,
+      "p95_ms": 6774
+    }
+  ]
+}

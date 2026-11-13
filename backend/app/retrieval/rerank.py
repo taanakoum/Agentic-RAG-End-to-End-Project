@@ -22,6 +22,7 @@ class FastEmbedReranker:
     def __init__(self, settings: Settings) -> None:
         self.model_name = settings.reranker_model
         self._cache_dir = str(settings.model_cache_dir)
+        self._threads = settings.rerank_threads or None  # None = ONNX Runtime default
         self._model: Any = None
         self._lock = threading.Lock()
 
@@ -29,7 +30,9 @@ class FastEmbedReranker:
         with self._lock:
             if self._model is None:
                 module: Any = importlib.import_module("fastembed.rerank.cross_encoder")
-                self._model = module.TextCrossEncoder(self.model_name, cache_dir=self._cache_dir)
+                self._model = module.TextCrossEncoder(
+                    self.model_name, cache_dir=self._cache_dir, threads=self._threads
+                )
             return self._model
 
     def score(self, query: str, passages: Sequence[str]) -> list[float]:

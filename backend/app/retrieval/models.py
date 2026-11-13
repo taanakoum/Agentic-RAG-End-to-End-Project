@@ -54,6 +54,9 @@ class RetrievalResult:
     candidates: dict[str, int] = field(default_factory=dict[str, int])
     # how many completed documents the user can search (0 = nothing uploaded or processed yet)
     readable_documents: int = 0
+    # True when the cross-encoder was not run because fusion was already confident
+    # (app.retrieval.skip)
+    rerank_skipped: bool = False
 
     @property
     def evidence_chunk_ids(self) -> frozenset[str]:

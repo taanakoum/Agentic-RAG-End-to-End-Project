@@ -42,6 +42,7 @@ from app.retrieval.cache import CachedResult, RetrievalCache, apply_numbers
 from app.retrieval.fusion import rrf_fuse
 from app.retrieval.models import Hit, RankedChunk, RetrievalMode, RetrievalResult
 from app.retrieval.rerank import Reranker
+from app.retrieval.skip import should_skip_rerank
 
 log = get_logger(__name__)
 
@@ -170,6 +171,7 @@ class Retriever:
                 current.set_attribute(f"retrieval.candidates.{name}", count)
             if result.degraded:
                 current.set_attribute("retrieval.degraded", list(result.degraded))
+            current.set_attribute("retrieval.rerank_skipped", result.rerank_skipped)
         meter = instruments().retrieval_latency
         meter.record(total[0], {"stage": "total", "mode": mode.value})
         for stage, ms in result.timings_ms.items():
@@ -320,7 +322,13 @@ class Retriever:
         result.candidates["fused"] = len(ordered)
         result.timings_ms["fuse"] = (time.perf_counter() - t0) * 1000
 
-        if mode is RetrievalMode.HYBRID_RERANK and ordered:
+        if (
+            mode is RetrievalMode.HYBRID_RERANK
+            and ordered
+            and should_skip_rerank(ordered[: s.rerank_candidates], s.rerank_skip_margin)
+        ):
+            result.rerank_skipped = True  # fusion is confident: no cross-encoder call
+        elif mode is RetrievalMode.HYBRID_RERANK and ordered:
             head = await self._rerank(text, ordered[: s.rerank_candidates], result)
             # the head is reranked; the remaining fused candidates follow in fused order, so the
             # caller still gets top_k chunks when rerank_candidates < top_k

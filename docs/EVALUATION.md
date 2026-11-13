@@ -62,3 +62,13 @@ document (extracted by the production parser); the relevance rule is the same as
 The real-model evaluation shares the application's quota counter (`docs/DEPLOYMENT.md`,
 "Calibrating daily usage"): use `--limit` for smoke runs and check `/health/llm` first. The test
 suite never calls a hosted model.
+
+## Re-ranking time (2026-11-13)
+
+`$env:PYTHONPATH="backend;."; uv run --no-sync python evaluation/retrieval/rerank_bench.py` (quality of
+every knob on the same candidates; set `PARSE_TIMEOUT_BASE_S=400` on a cold laptop) and
+`uv run --no-sync python evaluation/retrieval/rerank_threads.py` (interleaved latency). Outcome: keep the
+model, the 2000-character input and 5 candidates; ONNX threads at the default; adaptive skip with margin
+0.1 (no quality change, 6/64 questions skip the cross-encoder). Reports: `evaluation/reports/rerank_bench.md`
+and `rerank_threads.md`. The first latency table of `rerank_bench.md` was measured sequentially and drifted;
+use `rerank_threads.md` for thread settings.

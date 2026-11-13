@@ -109,6 +109,7 @@ class RetrievalCache:
                 s.rrf_k,
                 s.rerank_candidates,
                 s.rerank_max_chars,
+                s.rerank_skip_margin,
                 s.dense_query_prefix,
             ],
         }
