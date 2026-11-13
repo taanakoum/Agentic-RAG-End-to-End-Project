@@ -1,5 +1,5 @@
 {
-  "account": "tour-fa7ab64a@example.com",
+  "account": "tour-9eb622e7@example.com",
   "documents": [
     {
       "file": "nist_sp_800-63b.pdf",
@@ -8,7 +8,7 @@
       "passages": 218,
       "parser": "docling",
       "ocr_pages": 0,
-      "processing_s": 220.0,
+      "processing_s": 244.1,
       "error": null
     },
     {
@@ -18,7 +18,7 @@
       "passages": 17,
       "parser": "structured",
       "ocr_pages": 0,
-      "processing_s": 50.9,
+      "processing_s": 83.7,
       "error": null
     },
     {
@@ -28,14 +28,14 @@
       "passages": 58,
       "parser": "docling",
       "ocr_pages": 0,
-      "processing_s": 49.2,
+      "processing_s": 82.8,
       "error": null
     }
   ],
   "questions": [
     {
       "question": "What is the minimum length of a memorized secret chosen by the subscriber?",
-      "answer": "Memorized secrets chosen by the subscriber must be at least 8 characters in length [1].",
+      "answer": "A memorized secret chosen by the subscriber must be at least 8 characters in length [1].",
       "citations": [
         "[1] nist_sp_800-63b.pdf, page 24"
       ],
@@ -43,28 +43,27 @@
     },
     {
       "question": "Should verifiers require users to change their passwords periodically?",
-      "answer": "No, verifiers should not require memorized secrets (passwords) to be changed arbitrarily or periodically, unless there is a user request or evidence of authenticator compromise [S1, S2].",
+      "answer": "No, verifiers should not require memorized secrets to be changed arbitrarily (such as periodically), unless there is evidence that the authenticator has been compromised [1].",
       "citations": [
-        "[1] nist_sp_800-63b.pdf, page 25",
-        "[2] nist_sp_800-63b.pdf, page 64"
+        "[1] nist_sp_800-63b.pdf, page 25"
       ],
-      "seconds": 4.0
+      "seconds": 5.6
     },
     {
       "question": "How many failed authentication attempts may a verifier allow before rate limiting?",
-      "answer": "Unless otherwise specified for a given authenticator, verifiers shall limit consecutive failed authentication attempts on a single account to no more than 100 [1].",
+      "answer": "Unless otherwise specified for a given authenticator, the verifier SHALL limit consecutive failed authentication attempts on a single account to no more than 100 [1]. Additionally, a rate-limiting mechanism is specifically required when an authentication secret, authenticator output or activation secret,, or look-up secret has less than 64 bits of entropy.",
       "citations": [
         "[1] nist_sp_800-63b.pdf, page 36"
       ],
-      "seconds": 4.0
+      "seconds": 6.5
     },
     {
       "question": "How many layers does the encoder of the base Transformer have?",
-      "answer": "The encoder of the Transformer is composed of a stack of \ud835\udc41 = 6 N=6 identical layers [1].",
+      "answer": "The encoder of the Transformer is composed of a stack of N = 6 identical layers [1].",
       "citations": [
         "[1] attention_is_all_you_need.pdf, page 3"
       ],
-      "seconds": 6.0
+      "seconds": 3.4
     },
     {
       "question": "What BLEU score does the big Transformer reach on WMT 2014 English-to-German?",
@@ -72,17 +71,17 @@
       "citations": [
         "[1] attention_is_all_you_need.pdf, page 8"
       ],
-      "seconds": 4.0
+      "seconds": 3.4
     },
     {
       "question": "What does the calibre demo document demonstrate?",
-      "answer": "The calibre demo document demonstrates the ability of the calibre DOCX Input plugin to convert various typographic features from a Microsoft Word document into a modern ebook format [1].",
+      "answer": "The calibre demo document demonstrates the ability of the calibre DOCX Input plugin to convert various typographic features in a Microsoft Word document (2007 and newer) into modern ebook formats like EPUB or AZW3 [1]. It shows support for features such as images, tables, lists, footnotes, endnotes, links, dropcaps, and different types of text and paragraph-level formatting [1].",
       "citations": [
         "[1] calibre_demo.docx, page 1"
       ],
-      "seconds": 4.0
+      "seconds": 2.9
     }
   ],
   "kept_signed_in_after_reload": true,
-  "all_ready_after_s": 225.6
+  "all_ready_after_s": 252.6
 }

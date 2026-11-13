@@ -261,8 +261,8 @@ truth is strict, one sentence = one chunk, so absolute values are pessimistic.)
 
 With real, larger public documents in a real browser
 ([report](evaluation/reports/browser_tour_real_docs.md)): an 80-page NIST standard, a 15-page research
-paper and a Word file were processed in 220 s, 49 s and 51 s on a laptop CPU, and six questions about
-them were answered correctly with verified page citations in about 4 s each.
+paper and a Word file were processed in 244 s, 83 s and 84 s on a laptop CPU, and six questions about
+them were answered correctly with verified page citations in 2.9-6.5 s each.
 
 With a real free model (`gemini-3.5-flash-lite`, 46 questions): valid structured output on the first
 try for 94% of answerable questions, the correct source cited for 94%, 100% correct refusals on the
