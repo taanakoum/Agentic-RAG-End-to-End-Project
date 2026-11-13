@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx2
 import pytest
 
 from app.core.config import get_settings
+from app.core.security import PasswordService
+from app.ingestion.parsing import SandboxedPdfParser
 from tests.integration.docs_helpers import API, PASSWORD, bearer, upload
 from tests.pdfs import sample_text_pdf
 
@@ -56,8 +61,22 @@ async def register_all(client: httpx2.AsyncClient) -> list[str]:
     return emails
 
 
+def record_threads(
+    monkeypatch: pytest.MonkeyPatch, owner: type[Any], name: str, calls: list[int]
+) -> None:
+    """Wrap `owner.name` so that the thread id of every call is appended to `calls`."""
+    original: Callable[..., Any] = getattr(owner, name)
+
+    @functools.wraps(original)
+    def recorder(*args: Any, **kwargs: Any) -> Any:
+        calls.append(threading.get_ident())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(owner, name, recorder)
+
+
 async def test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_reads(
-    client_with_settings: Any,
+    client_with_settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # PRODUCTION-strength Argon2 (64 MiB, t=3, p=4, ~100+ ms per hash). With the cheap parameters
     # used elsewhere in the suite a hash takes ~5 ms and a blocking call would go unnoticed.
@@ -70,6 +89,15 @@ async def test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_r
         *(client.post(f"{API}/auth/login", json={"email": e, "password": PASSWORD}) for e in emails)
     )
     headers = [bearer(r.json()["access_token"]) for r in logins]
+
+    # PRIMARY, deterministic check: record the thread of every Argon2 operation and of every PDF
+    # inspection during the burst. A blocking call on the event loop would show the loop's thread.
+    loop_thread = threading.get_ident()
+    hash_threads: list[int] = []
+    inspect_threads: list[int] = []
+    record_threads(monkeypatch, PasswordService, "verify_sync", hash_threads)
+    record_threads(monkeypatch, PasswordService, "hash_sync", hash_threads)
+    record_threads(monkeypatch, SandboxedPdfParser, "inspect", inspect_threads)
 
     lag = LoopLag()
     lag.start()
@@ -88,16 +116,15 @@ async def test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_r
     assert all(r.status_code in {200, 202} for r in responses), [
         r.status_code for r in responses if r.status_code not in {200, 202}
     ]
-    # No blocking call on the loop. One slow sample can be a GC pause or the OS scheduler on a busy
-    # machine, but a blocking call shows up as MANY long stalls (one per blocked hash): count them.
-    # A blocked hash is ~100+ ms EACH: blocking Argon2 on the loop gave 3-4 stalls (up to 592 ms)
-    # in mutation checks; a busy full-suite run produces at most one or two scheduler/GC stalls.
-    long_stalls = sorted((lag_s for lag_s in lag.samples if lag_s > 0.15), reverse=True)
-    assert len(long_stalls) <= 2, (
-        f"{len(long_stalls)} event-loop stalls over 150 ms: "
-        f"{[round(x * 1000) for x in long_stalls[:8]]} ms"
-    )
-    assert lag.max_lag < 0.8, f"event loop was blocked for {lag.max_lag * 1000:.0f} ms"
+    assert len(hash_threads) >= USERS, "the burst should have verified every login"
+    assert loop_thread not in hash_threads, "Argon2 ran on the event-loop thread"
+    assert len(inspect_threads) >= USERS, "the burst should have inspected every upload"
+    assert loop_thread not in inspect_threads, "PDF inspection ran on the event-loop thread"
+
+    # SECONDARY, loose wall-clock signal: it can only catch a stall of some other origin (the
+    # thread checks above are the real guard, because wall-clock limits flaked on a loaded laptop,
+    # fixed in item 3 of the remaining-issues plan), so the limit is far above scheduler/GC noise.
+    assert lag.max_lag < 2.0, f"event loop was blocked for {lag.max_lag * 1000:.0f} ms"
     assert elapsed < 30
 
 

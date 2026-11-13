@@ -276,3 +276,8 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Tests (`test_checkpointer_init.py` +2, real lifespan, real PostgreSQL): the provider is initialised after start-up without any request; with the setup advisory lock held and a 1 s init timeout, start-up still completes in < 5 s, nothing is left half-initialised, and the first use after the lock is released works.
 - Results: `pytest test_checkpointer_init.py test_checkpointer.py` -> 12 passed; with `test_frontend_api.py` and `test_chat_e2e.py` -> 17 passed, 1 skipped; ruff/pyright clean.
 - Mutation: replacing the warm-up task by a no-op -> `test_start_up_warms_the_checkpointer_before_the_first_request` fails ("not warmed at start-up"), 1 failed 3 passed; restored.
+
+### Item 3 - KI-045: deterministic event-loop test
+- Change: `test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_reads` now wraps `PasswordService.verify_sync` / `hash_sync` and `SandboxedPdfParser.inspect` to record the thread id of each call during the burst and asserts: at least 12 calls were seen and none ran on the event-loop thread (primary, deterministic). The wall-clock check is kept only as a loose secondary signal (max lag < 2 s; the old "at most 2 stalls over 150 ms" rule is gone).
+- Results: `pytest backend/tests/integration/test_concurrency.py` -> 2 passed; ruff/pyright clean.
+- Mutation: `PasswordService.verify` calling `verify_sync` directly on the loop (as in entry 15) -> the test failed 3 of 3 runs with "Argon2 ran on the event-loop thread"; restored -> passes.

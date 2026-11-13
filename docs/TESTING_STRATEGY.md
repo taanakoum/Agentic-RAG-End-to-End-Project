@@ -60,4 +60,7 @@ file may belong to several. The Docker smoke test is `scripts/verify_g1.ps1` (ne
   and long lines in data-heavy scripts.
 - Mutation checks guard the important tests: a property is only trusted once a deliberate defect
   made a test fail (results in docs/EXECUTION_LOG.md).
-- Timing assertions are the weakest tests: see KI-045.
+- Timing assertions are the weakest tests, so a property that can be asserted structurally is asserted
+  structurally: the event-loop test records the THREAD on which every Argon2 hash/verification and every
+  PDF inspection runs and requires it never to be the loop's thread (deterministic); the wall-clock lag
+  limit (2 s) is only a loose secondary signal.

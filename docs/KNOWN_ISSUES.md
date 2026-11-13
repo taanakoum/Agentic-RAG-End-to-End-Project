@@ -44,7 +44,7 @@ Accepted limitations, trade-offs and planned work. "Plan" says when it will be l
 | KI-023 | The default re-ranker (bge-reranker-v2-m3, int8) costs about 0.45 s per candidate on CPU (3 s of a 5.5 s question in a real trace); concurrent searches queue on `INFERENCE_THREADS`. Smaller re-rankers were measured and were worse than no re-ranking on the evaluation data | Options: GPU, caching, `RERANK_ENABLED=false` (10 ms hybrid) |
 | KI-024 | The Qdrant filter lists the caller's readable document ids; a user with thousands of documents sends a large filter on every query | Measure in Phase 11 |
 | KI-022 | The only concurrency measurement so far is a single-client benchmark on a laptop (`load_testing/concurrency_bench.py`); it shows the event loop stays responsive, not capacity | Phase 11 (Locust is installed; scenarios not written yet) |
-| KI-038 | Tracing overhead under load is unmeasured (it adds a little event-loop work; see KI-045) | Phase 11 |
+| KI-038 | Tracing overhead under load is unmeasured (it adds a little event-loop work) | Phase 11 |
 
 ### Language model
 | ID | Limitation | Plan |
@@ -67,5 +67,4 @@ Accepted limitations, trade-offs and planned work. "Plan" says when it will be l
 ### Tests
 | ID | Limitation | Plan |
 |---|---|---|
-| KI-045 | `test_event_loop_stays_responsive_under_concurrent_logins_uploads_and_reads` is a wall-clock assertion: it failed in three full-suite runs (passing alone and in the later runs) on a loaded laptop. Tolerance is "at most 2 stalls over 150 ms"; a mutation that blocks Argon2 on the loop still fails it (3-4 stalls, up to 592 ms), but the margin is thin | Consider asserting on thread-pool use instead of wall-clock stalls |
 | KI-046 | Line coverage of the in-process code is **93.2%** (8,541 of 9,166 statements; `pytest --cov`, 2026-11-13): agents 98.9%, API routers 100%, services 95.9%, retrieval 98.6%, LLM 98.4%, ingestion 85.9%, tasks 81.6%, frontend views 79.4%. Code that runs in sandboxed child processes or separate worker processes (e.g. `sandbox_jobs.py`, 29%) is exercised by the tests but not measured, so the real figure is higher. `uvx pip-audit` on the locked dependencies reported no known vulnerabilities (2026-11-12) | Run `coverage` and `uvx pip-audit` again before a release |
