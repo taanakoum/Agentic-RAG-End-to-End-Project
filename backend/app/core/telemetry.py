@@ -39,6 +39,8 @@ from opentelemetry.sdk.trace.export import (
 )
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+from sqlalchemy import Connection, Engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.config import REPO_ROOT, Settings
 
@@ -317,13 +319,90 @@ def instrument_libs() -> None:
     load("opentelemetry.instrumentation.redis", "RedisInstrumentor")().instrument(
         sanitize_query=True
     )
-    load("opentelemetry.instrumentation.sqlalchemy", "SQLAlchemyInstrumentor")().instrument(
-        enable_commenter=False
-    )
+    # database spans come from `instrument_engine` (own, statement-free; see KI-047 history)
+    _state["db_spans"] = True
 
 
 def is_active() -> bool:
     return _state.get("provider") is not None
+
+
+# ------------------------------------------------------------------ database spans
+
+_SQL_VERB = re.compile(r"[\s(]*([A-Za-z]+)")
+_DML = frozenset({"SELECT", "INSERT", "UPDATE", "DELETE"})
+_SPAN_SLOT = "_agentic_rag_db_span"
+
+
+def sql_operation(statement: str) -> str:
+    """The first SQL keyword when it is one of SELECT/INSERT/UPDATE/DELETE, else OTHER."""
+    found = _SQL_VERB.match(statement)
+    verb = found.group(1).upper() if found else ""
+    return verb if verb in _DML else "OTHER"
+
+
+def instrument_engine(engine: Engine | AsyncEngine) -> None:
+    """Record one span per executed statement, WITHOUT the statement text or its parameters.
+
+    SQLAlchemy 2.1 is not supported by the library instrumentor, and statements (and above all
+    bound parameters) can contain user content, so this records only `db.system`, `db.operation`
+    and the row count. It is a no-op until `instrument_libs` ran (telemetry active) and it never
+    starts a trace on its own: a statement outside any trace (pool maintenance, polling) is not
+    recorded.
+    """
+    from sqlalchemy import event
+
+    target = engine.sync_engine if isinstance(engine, AsyncEngine) else engine
+
+    def before(
+        conn: Connection,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        if context is None or not _state.get("db_spans"):
+            return
+        if not trace.get_current_span().get_span_context().is_valid:
+            return
+        operation = sql_operation(statement)
+        started = tracer().start_span(
+            f"db {operation}",
+            kind=SpanKind.CLIENT,
+            attributes=safe_attributes({"db.system": conn.dialect.name, "db.operation": operation}),
+        )
+        setattr(context, _SPAN_SLOT, started)
+
+    def after(
+        conn: Connection,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        finished: Span | None = getattr(context, _SPAN_SLOT, None)
+        if finished is None:
+            return
+        setattr(context, _SPAN_SLOT, None)
+        rows = getattr(cursor, "rowcount", -1)
+        if isinstance(rows, int) and rows >= 0:
+            finished.set_attribute("db.rows", rows)
+        finished.end()
+
+    def failed(error: Any) -> None:
+        finished: Span | None = getattr(error.execution_context, _SPAN_SLOT, None)
+        if finished is None:
+            return
+        setattr(error.execution_context, _SPAN_SLOT, None)
+        finished.set_attribute("error.type", type(error.original_exception).__name__)
+        finished.set_status(Status(StatusCode.ERROR))
+        finished.end()
+
+    event.listen(target, "before_cursor_execute", before)
+    event.listen(target, "after_cursor_execute", after)
+    event.listen(target, "handle_error", failed)
 
 
 def instrument_fastapi(app: Any) -> None:

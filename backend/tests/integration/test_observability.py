@@ -134,6 +134,17 @@ async def test_user_content_never_reaches_a_span_or_an_event(
     ]
     for needle in forbidden:
         assert needle not in dump, needle
+    assert th.named("db SELECT")  # database spans exist, and carry no statement text
+    for fragment in (
+        " FROM ",
+        "INSERT INTO",
+        "UPDATE ",
+        " WHERE ",
+        " VALUES",
+        "users",
+        "conversations",
+    ):
+        assert fragment not in dump, fragment
     server = next(s for s in th.spans() if s.kind is SpanKind.SERVER)
     assert server.attributes is not None
     assert "Authorization" not in dump and "Bearer" not in dump
@@ -155,6 +166,61 @@ async def test_a_failing_model_marks_the_span_with_the_error_type_only(
     assert failed and failed[0].attributes is not None
     assert failed[0].attributes["error.type"] == "ModelProviderError"
     assert "secret prompt text" not in th.serialized()
+
+
+async def test_database_statements_are_spans_of_the_same_trace_without_statement_text(
+    client: httpx2.AsyncClient, infra: Infrastructure, scripted: ScriptedModel
+) -> None:
+    alice = await make_actor(client)
+    await seed_handbook(infra, alice)
+    session = await make_session(client, alice)
+    th.EXPORTER.clear()
+    response = await post(client, alice, session)
+    assert response.status_code == 200, response.text
+
+    trace = response.headers["x-trace-id"]
+    in_trace = [s for s in th.spans() if th.trace_id_of(s) == trace and s.name.startswith("db ")]
+    names = {s.name for s in in_trace}
+    assert "db SELECT" in names and "db INSERT" in names, names
+    for item in in_trace:
+        assert item.kind is SpanKind.CLIENT and item.attributes is not None
+        assert item.attributes["db.system"] == "postgresql"
+        assert item.attributes["db.operation"] == item.name.removeprefix("db ")
+        assert not any(key in item.attributes for key in ("db.statement", "db.query.text"))
+        assert all(" FROM " not in str(value) for value in item.attributes.values())
+    # a database span hangs below the request or a node, never loose in another trace
+    server = next(s for s in th.spans() if s.kind is SpanKind.SERVER and th.trace_id_of(s) == trace)
+    assert server.context is not None
+    assert any(s.parent is not None for s in in_trace)
+
+
+async def test_a_failing_statement_ends_its_span_with_the_error_type_only(
+    infra: Infrastructure,
+) -> None:
+    from sqlalchemy import text
+    from sqlalchemy.exc import ProgrammingError
+
+    from app.core.telemetry import span
+
+    th.EXPORTER.clear()
+    with span("test.root"):
+        async with infra.engine.connect() as conn:
+            with pytest.raises(ProgrammingError):
+                await conn.execute(text("SELECT secret_column_name FROM no_such_table"))
+    failed = [s for s in th.named("db SELECT") if s.attributes and "error.type" in s.attributes]
+    assert failed and failed[0].attributes is not None
+    assert failed[0].attributes["error.type"] in {"UndefinedTable", "ProgrammingError"}
+    assert "no_such_table" not in th.serialized() and "secret_column_name" not in th.serialized()
+    assert failed[0].status.status_code.name == "ERROR"
+
+
+async def test_statements_outside_any_trace_are_not_recorded(infra: Infrastructure) -> None:
+    from sqlalchemy import text
+
+    th.EXPORTER.clear()
+    async with infra.engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+    assert not [s for s in th.spans() if s.name.startswith("db ")]
 
 
 # ------------------------------------------------------------------ upload -> outbox -> worker
@@ -180,6 +246,9 @@ async def test_ingestion_in_the_worker_continues_the_trace_of_the_upload_request
     assert parse.attributes is not None and int(str(parse.attributes["ingestion.chunks"])) >= 2
     assert th.metric_points("ingestion.stage.duration")
     assert "private-report" not in th.serialized()  # the file name is user content
+    db = [s for s in th.spans() if th.trace_id_of(s) == trace and s.name.startswith("db ")]
+    assert {"db SELECT", "db INSERT"} <= {s.name for s in db}  # request and worker, one trace
+    assert any(s.name == "db UPDATE" for s in db)
 
 
 async def test_a_permanently_failing_document_is_a_traceable_failure(

@@ -12,10 +12,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
+from app.core.telemetry import instrument_engine
 
 
 def create_async_db_engine(settings: Settings) -> AsyncEngine:
-    return create_async_engine(
+    engine = create_async_engine(
         settings.database_url(driver="asyncpg"),
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
@@ -24,11 +25,13 @@ def create_async_db_engine(settings: Settings) -> AsyncEngine:
         pool_pre_ping=True,
         connect_args={"timeout": settings.db_connect_timeout_s},
     )
+    instrument_engine(engine)
+    return engine
 
 
 def create_sync_db_engine(settings: Settings) -> Engine:
     """Used by Celery tasks and Alembic (see ADR-003: sync tasks + sync clients)."""
-    return create_engine(
+    engine = create_engine(
         settings.database_url(driver="psycopg"),
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,
@@ -37,6 +40,8 @@ def create_sync_db_engine(settings: Settings) -> Engine:
         pool_pre_ping=True,
         connect_args={"connect_timeout": settings.db_connect_timeout_s},
     )
+    instrument_engine(engine)
+    return engine
 
 
 def async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

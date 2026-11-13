@@ -62,7 +62,6 @@ Accepted limitations, trade-offs and planned work. "Plan" says when it will be l
 ### Observability
 | ID | Limitation | Plan |
 |---|---|---|
-| KI-047 | OpenTelemetry's SQLAlchemy instrumentation does not support the installed SQLAlchemy 2.1.8 yet ("only instruments sqlalchemy < 2.1.0"), so database queries do not appear as spans (HTTP, Redis, agent, retrieval, model and worker spans do). A logged error at start-up says so | Upgrade `opentelemetry-instrumentation-sqlalchemy` when it supports 2.1 |
 | KI-037 | OTLP export is verified against a local receiver and **Arize Phoenix 21** (spans arrive with their hierarchy and without private attributes); Langfuse and other collectors are not verified (they use the same standard endpoint) | Try Langfuse if you adopt it |
 
 ### Tests

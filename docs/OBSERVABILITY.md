@@ -15,7 +15,7 @@ Set in `.env` (see `docs/DEPLOYMENT.md` for the full list):
 | `OTEL_EXPORTER_OTLP_HEADERS` | JSON object, e.g. `{"authorization": "Bearer ..."}` |
 | `OTEL_SAMPLE_RATIO` | 0..1, parent-based (a trace is kept or dropped as a whole, also in the worker) |
 | `OTEL_METRICS_ENABLED` | also export metrics every 30 s |
-| `OTEL_INSTRUMENT_LIBRARIES` | auto-instrument SQLAlchemy, Redis, httpx |
+| `OTEL_INSTRUMENT_LIBRARIES` | auto-instrument Redis and httpx, and record database spans (own engine-event code) |
 
 Both the API and each Celery worker process call the same setup (`app/core/telemetry.py`), with
 service names `agentic-rag-api` and `agentic-rag-worker`.
@@ -108,7 +108,17 @@ POST /api/v1/documents/upload
       └─ ingestion.index
 ```
 
-SQLAlchemy, Redis and httpx (model provider) spans appear as children automatically.
+Redis and httpx (model provider) spans appear as children automatically (library instrumentation).
+
+Database spans (`db SELECT`, `db INSERT`, `db UPDATE`, `db DELETE`, `db OTHER`) are recorded by
+`app.core.telemetry.instrument_engine`, attached to the async and the sync engine in
+`app/database/session.py`, because the library instrumentor refuses SQLAlchemy 2.1. A database span has
+`db.system`, `db.operation` (a fixed vocabulary, never the statement) and `db.rows`; it NEVER carries the
+statement text or its parameters (they can hold user content); an error records the exception type only.
+A statement that runs outside any trace (pool maintenance, polling loops) is not recorded, so database
+spans always hang below a request, a node or a worker task. Tests: `test_observability.py` (a chat turn
+and an upload produce database spans in their trace; privacy scan finds no SQL text; failures; no
+orphan spans) and `test_telemetry.py` (operation vocabulary).
 
 Correlation: every response carries `X-Request-ID` and `X-Trace-Id`; the server span has
 `app.request_id`; every log line has `request_id`, `trace_id` and `span_id`. A user quoting either id

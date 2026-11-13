@@ -193,3 +193,25 @@ def test_user_ids_are_hashed_never_sent_raw() -> None:
     assert "3f2b8c1e" not in value and len(value) == 32
     assert value == hashed_user("3f2b8c1e-0000-4000-8000-000000000001")  # stable pseudonym
     assert value != hashed_user("3f2b8c1e-0000-4000-8000-000000000002")
+
+
+@pytest.mark.parametrize(
+    ("statement", "operation"),
+    [
+        ("SELECT 1", "SELECT"),
+        ("  select * from users", "SELECT"),
+        ("(SELECT 1) UNION (SELECT 2)", "SELECT"),
+        ("INSERT INTO t VALUES (1)", "INSERT"),
+        ("update t set a = 1", "UPDATE"),
+        ("DELETE FROM t", "DELETE"),
+        ("WITH x AS (SELECT 1) SELECT * FROM x", "OTHER"),
+        ("CREATE TABLE secret_name (a int)", "OTHER"),
+        ("", "OTHER"),
+    ],
+)
+def test_sql_operation_is_a_fixed_vocabulary_never_the_statement(
+    statement: str, operation: str
+) -> None:
+    from app.core.telemetry import sql_operation
+
+    assert sql_operation(statement) == operation

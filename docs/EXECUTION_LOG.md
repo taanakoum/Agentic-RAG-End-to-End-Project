@@ -260,3 +260,13 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Real-document test (`scripts/browser_tour.py`, report `evaluation/reports/browser_tour_real_docs.md`): kept signed in after reload: True; NIST SP 800-63B 80 pages / 218 passages in 220.0 s, arXiv paper 15 pages / 58 passages in 49.2 s, calibre DOCX 17 passages in 50.9 s; six questions answered correctly with verified page citations in 4-6 s. Finding fixed: NFKC normalisation of Docling chunk text (unit test; Docling integration tests 3 passed).
 - Plan for the remaining known issues: `docs/plans/REMAINING_ISSUES_PLAN.md` (KI-047, 048, 045, 031, 026, 018, 028, 027, 008, 046; out of scope by the owner: language model, performance, security sections).
 - Usage: could not be measured.
+
+---
+## Entry 18: the remaining-issues plan (docs/plans/REMAINING_ISSUES_PLAN.md), executed by Sonnet 5.5
+- Date: 2026-11-13. Branch feature/phase-6-single-agent. One commit per work item (hashes in the final report). All commands run from the repo root with `UV_PROJECT_ENVIRONMENT=C:/Users/ali_a/devtools/venv` and `uv run --no-sync`.
+
+### Item 1 - KI-047: database spans without the library instrumentor
+- Change: `app/core/telemetry.py` `instrument_engine` (SQLAlchemy engine events `before_cursor_execute` / `after_cursor_execute` / `handle_error`; span `db <SELECT|INSERT|UPDATE|DELETE|OTHER>`, attributes `db.system`, `db.operation`, `db.rows`; no statement text, no parameters; no span outside a trace; active only after `instrument_libs`), attached in `app/database/session.py` to both engines; the `opentelemetry-instrumentation-sqlalchemy` dependency was removed (`uv lock`), so the start-up error log is gone.
+- Tests: `test_observability.py` +3 (chat turn has `db SELECT` and `db INSERT` in its own trace without statement text; a failing statement ends its span with the error type only; statements outside any trace are not recorded), the privacy scan now also asserts no SQL fragments, the upload test asserts `db SELECT/INSERT/UPDATE` in the request+worker trace; `test_telemetry.py` +9 (operation vocabulary).
+- Results: `pytest backend/tests/integration/test_observability.py` -> 9 passed; `pytest backend/tests/unit/test_telemetry.py` -> 52 passed; ruff format/check clean, pyright 0 errors.
+- Mutation: adding `"db.statement": statement` to the span attributes -> 3 failed, 6 passed (the privacy test, the same-trace test and the failing-statement test); restored -> 9 passed.
