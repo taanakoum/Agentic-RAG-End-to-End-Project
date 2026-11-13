@@ -55,3 +55,25 @@ def test_psycopg_async_refuses_the_proactor_loop_which_is_why_the_factory_exists
         asyncio.Runner(loop_factory=asyncio.ProactorEventLoop) as runner,  # pyright: ignore[reportAttributeAccessIssue]
     ):
         runner.run(ask())
+
+
+async def test_async_tests_run_on_a_selector_loop_from_the_loop_factory_hook() -> None:
+    """The suite gets its selector loop from pytest-asyncio's loop-factory hook (conftest)."""
+    assert isinstance(asyncio.get_running_loop(), asyncio.SelectorEventLoop)
+    async with await psycopg.AsyncConnection.connect(conninfo(get_settings())) as connection:
+        assert await (await connection.execute("SELECT 1")).fetchone() == (1,)
+
+
+def test_no_code_installs_a_deprecated_event_loop_policy() -> None:
+    """Policies are deprecated from Python 3.14; only loop factories are used (KI-027)."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    offenders = [
+        str(path.relative_to(root))
+        for folder in ("backend", "frontend", "scripts", "evaluation")
+        for path in (root / folder).rglob("*.py")
+        if path != Path(__file__).resolve()
+        and "set_event_loop_policy" in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert offenders == []

@@ -5,15 +5,16 @@ first use (so processes that never run a graph hold no extra connections). Table
 (`setup()`, idempotent, versioned by the library) is serialised across processes with a
 PostgreSQL advisory lock so several API workers starting together cannot race.
 
-psycopg's async mode cannot run on Windows' default ProactorEventLoop; `use_selector_loop()`
-selects the selector loop there (a no-op elsewhere, and containers run Linux).
+psycopg's async mode cannot run on Windows' default ProactorEventLoop. The server therefore starts
+with `--loop app.chat.checkpointer:selector_event_loop` (scripts/stack.py does), and the tests get
+the same loop from pytest-asyncio's loop-factory hook; no event-loop POLICY is touched (policies are
+deprecated from Python 3.14). Linux containers are unaffected.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import sys
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg.rows import dict_row
@@ -25,15 +26,6 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 _SETUP_LOCK_KEY = 7_262_024_001  # arbitrary, project-wide constant for pg_advisory_lock
-
-
-def use_selector_loop() -> None:
-    """Call before the event loop is created (process start, test collection)."""
-    if sys.platform == "win32":
-        # deprecated only from Python 3.14 (project pins 3.13); revisit with loop_factory then
-        asyncio.set_event_loop_policy(  # pyright: ignore[reportDeprecated]
-            asyncio.WindowsSelectorEventLoopPolicy()  # pyright: ignore[reportDeprecated]
-        )
 
 
 def selector_event_loop() -> asyncio.AbstractEventLoop:

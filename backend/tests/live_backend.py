@@ -14,6 +14,7 @@ from typing import Any
 
 import uvicorn
 
+from app.chat.checkpointer import selector_event_loop
 from app.core.config import Settings, get_settings
 from app.llm.cache import LLMGateway
 from app.main import create_app
@@ -33,7 +34,7 @@ class LiveBackend:
 
     def _run(self) -> None:
         try:
-            asyncio.run(self._server.serve())
+            asyncio.run(self._server.serve(), loop_factory=selector_event_loop)
         except BaseException as exc:  # reported by start()
             self._error = exc
 

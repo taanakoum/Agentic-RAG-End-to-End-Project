@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import os
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
-from app.chat.checkpointer import use_selector_loop
-
-use_selector_loop()  # before any event loop exists (psycopg async needs it on Windows)
+from app.chat.checkpointer import selector_event_loop
 
 _TMP_ROOT = Path(tempfile.mkdtemp(prefix="rag-tests-"))
 
@@ -77,6 +77,33 @@ def _fresh_spans() -> Iterator[None]:
 @pytest.fixture(scope="session")
 def tmp_root() -> Iterator[Path]:
     yield _TMP_ROOT
+
+
+# ---------------------------------------------------------------- event loop
+def pytest_asyncio_loop_factories(
+    config: pytest.Config, item: pytest.Item
+) -> dict[str, Callable[[], asyncio.AbstractEventLoop]]:
+    """Every async test runs on a SELECTOR event loop (psycopg async, used by the LangGraph
+    checkpointer, cannot run on Windows' default Proactor loop). This is pytest-asyncio's supported
+    loop-factory hook; no deprecated event-loop policy is installed."""
+    return {"selector": selector_event_loop}
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Give SYNC tests that use async fixtures the same loop factory as async tests.
+
+    pytest-asyncio parametrizes only async tests with the factory. A sync test that requests an
+    async fixture (our autouse `_clean_state`) would otherwise see a different parameter, and
+    pytest would tear down the session-scoped `infra` between the two kinds of tests.
+    """
+    name = "_asyncio_loop_factory"
+    if inspect.iscoroutinefunction(metafunc.function):
+        return  # async tests are parametrized by pytest-asyncio itself
+    if name not in metafunc.fixturenames:
+        metafunc.fixturenames.append(name)  # what pytest-asyncio does for its own items
+    metafunc.parametrize(
+        name, [selector_event_loop], indirect=True, scope="session", ids=[pytest.HIDDEN_PARAM]
+    )
 
 
 # ---------------------------------------------------------------- test categories
