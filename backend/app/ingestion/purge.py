@@ -15,6 +15,7 @@ from app.ingestion.store import IngestionStore
 from app.llm.cache import purge_user_cache_sync
 from app.memory.index import delete_user_vectors
 from app.models.chat import Conversation
+from app.retrieval.cache import purge_user_retrieval_cache_sync
 
 log = get_logger(__name__)
 
@@ -53,6 +54,7 @@ def _purge_llm_cache(rt: WorkerRuntime, user_id: uuid.UUID) -> None:
     redis = create_sync_redis(rt.settings)
     try:
         purge_user_cache_sync(redis, user_id)
+        purge_user_retrieval_cache_sync(redis, user_id)
     finally:
         redis.close()
 

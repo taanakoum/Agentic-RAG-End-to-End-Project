@@ -17,10 +17,13 @@ from typing import Any
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
+    Condition,
     FieldCondition,
     Filter,
+    HasIdCondition,
     MatchAny,
     MatchValue,
+    Record,
     ScoredPoint,
     SparseVector,
 )
@@ -32,9 +35,10 @@ from app.core.exceptions import (
     RetrievalTimeoutError,
 )
 from app.core.logging import get_logger
-from app.core.telemetry import instruments, span, timed
+from app.core.telemetry import instruments, set_attributes, span, timed
 from app.ingestion.embedding import Embedder
 from app.ingestion.indexing import collection_name
+from app.retrieval.cache import CachedResult, RetrievalCache, apply_numbers
 from app.retrieval.fusion import rrf_fuse
 from app.retrieval.models import Hit, RankedChunk, RetrievalMode, RetrievalResult
 from app.retrieval.rerank import Reranker
@@ -44,19 +48,27 @@ log = get_logger(__name__)
 Scored = list[tuple[Hit, float]]
 
 
-def build_filter(user_id: uuid.UUID, document_ids: Sequence[uuid.UUID]) -> Filter:
-    """The authorization filter attached to every query (tenant AND the allowed documents)."""
-    return Filter(
-        must=[
-            FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
-            FieldCondition(
-                key="document_id", match=MatchAny(any=[str(d) for d in sorted(set(document_ids))])
-            ),
-        ]
-    )
+def build_filter(
+    user_id: uuid.UUID,
+    document_ids: Sequence[uuid.UUID],
+    chunk_ids: Sequence[str] | None = None,
+) -> Filter:
+    """The authorization filter attached to every query (tenant AND the allowed documents).
+
+    `chunk_ids` additionally restricts to those points (used to reload cached results).
+    """
+    must: list[Condition] = [
+        FieldCondition(key="user_id", match=MatchValue(value=str(user_id))),
+        FieldCondition(
+            key="document_id", match=MatchAny(any=[str(d) for d in sorted(set(document_ids))])
+        ),
+    ]
+    if chunk_ids is not None:
+        must.append(HasIdCondition(has_id=list(chunk_ids)))
+    return Filter(must=must)
 
 
-def _hit_from_point(point: ScoredPoint, user_id: uuid.UUID) -> Hit | None:
+def _hit_from_point(point: ScoredPoint | Record, user_id: uuid.UUID) -> Hit | None:
     payload: dict[str, Any] = point.payload or {}
     try:
         # Defence in depth: the filter already guarantees this; a mismatch means a bug or a
@@ -89,7 +101,9 @@ class Retriever:
         embedder: Embedder,
         reranker: Reranker,
         executor: ThreadPoolExecutor,
+        cache: RetrievalCache | None = None,
     ) -> None:
+        self._cache = cache
         self._qdrant = qdrant
         self._settings = settings
         self._embedder = embedder
@@ -127,8 +141,13 @@ class Retriever:
         document_ids: Sequence[uuid.UUID],
         mode: RetrievalMode,
         top_k: int,
+        knowledge_base: str | None = None,
     ) -> RetrievalResult:
-        """Authorized hybrid search (traced: spans and timings carry counts, never query text)."""
+        """Authorized hybrid search (traced: spans and timings carry counts, never query text).
+
+        With a cache and a `knowledge_base` fingerprint (a hash of the readable document ids and
+        versions), a repeated question is served from the cached ranking (`app.retrieval.cache`).
+        """
         with (
             span(
                 "retrieval.search",
@@ -138,8 +157,13 @@ class Retriever:
             ) as current,
             timed() as total,
         ):
-            result = await self._search(
-                user_id=user_id, query=query, document_ids=document_ids, mode=mode, top_k=top_k
+            result = await self._cached_search(
+                user_id=user_id,
+                query=query,
+                document_ids=document_ids,
+                mode=mode,
+                top_k=top_k,
+                knowledge_base=knowledge_base,
             )
             current.set_attribute("retrieval.chunks", len(result.chunks))
             for name, count in result.candidates.items():
@@ -152,6 +176,100 @@ class Retriever:
             if stage != "total":
                 meter.record(ms, {"stage": stage, "mode": mode.value})
         return result
+
+    async def _cached_search(
+        self,
+        *,
+        user_id: uuid.UUID,
+        query: str,
+        document_ids: Sequence[uuid.UUID],
+        mode: RetrievalMode,
+        top_k: int,
+        knowledge_base: str | None,
+    ) -> RetrievalResult:
+        cache = self._cache
+        key: str | None = None
+        if (
+            cache is not None
+            and cache.enabled
+            and knowledge_base
+            and document_ids
+            and query.strip()
+        ):
+            key = cache.key(
+                user_id=user_id, query=query, mode=mode, top_k=top_k, knowledge_base=knowledge_base
+            )
+            started = time.perf_counter()
+            cached = await cache.get(key)
+            restored = await self._restore(cached, query, mode, user_id, document_ids, started)
+            if restored is not None:
+                self._note_cache("hit")
+                return restored
+            self._note_cache("stale" if cached is not None else "miss")
+        result = await self._search(
+            user_id=user_id, query=query, document_ids=document_ids, mode=mode, top_k=top_k
+        )
+        if cache is not None and key is not None:
+            await cache.put(key, result)
+        return result
+
+    @staticmethod
+    def _note_cache(outcome: str) -> None:
+        set_attributes(**{"retrieval.cache": outcome})
+        instruments().retrieval_cache.add(1, {"outcome": outcome})
+
+    async def _restore(
+        self,
+        cached: CachedResult | None,
+        query: str,
+        mode: RetrievalMode,
+        user_id: uuid.UUID,
+        document_ids: Sequence[uuid.UUID],
+        started: float,
+    ) -> RetrievalResult | None:
+        """Rebuild a result from a cached ranking, loading the chunks again from Qdrant.
+
+        The payloads come from the vector store with the same user/document filter as a search, so
+        a cached id can never bring back text the caller may no longer read. If ANY cached chunk is
+        gone the entry is treated as stale (None) and a full search runs.
+        """
+        if cached is None or not cached.chunks:
+            return None
+        ids = [c.chunk_id for c in cached.chunks]
+        flt = build_filter(user_id, document_ids, ids)
+        try:
+            points, _ = await self._qdrant.scroll(
+                collection_name(self._settings),
+                scroll_filter=flt,
+                limit=len(ids),
+                with_payload=True,
+                with_vectors=False,
+                timeout=max(1, int(self._settings.qdrant_timeout_s)),
+            )
+        except Exception as exc:  # the normal search below reports a real outage properly
+            log.warning("retrieval_cache_restore_failed", error=type(exc).__name__)
+            return None
+        hits: dict[str, Hit] = {}
+        for point in points:
+            hit = _hit_from_point(point, user_id)
+            if hit is not None:
+                hits[hit.chunk_id] = hit
+        chunks: list[RankedChunk] = []
+        for item in cached.chunks:
+            hit = hits.get(item.chunk_id)
+            if hit is None:
+                return None
+            chunk = RankedChunk(hit=hit)
+            apply_numbers(chunk, item.numbers)
+            chunks.append(chunk)
+        elapsed = (time.perf_counter() - started) * 1000
+        return RetrievalResult(
+            query=query,
+            mode=mode,
+            chunks=chunks,
+            timings_ms={"cache": elapsed, "total": elapsed},
+            candidates=dict(cached.candidates),
+        )
 
     async def _search(
         self,

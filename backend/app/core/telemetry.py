@@ -205,6 +205,9 @@ class Instruments:
         self.retrieval_latency = meter.create_histogram("retrieval.duration", unit="ms")
         self.ingestion_stage = meter.create_histogram("ingestion.stage.duration", unit="ms")
         self.cache = meter.create_counter("llm.cache", description="cache hit/miss/bypass/error")
+        self.retrieval_cache = meter.create_counter(
+            "retrieval.cache", description="retrieval cache hit/miss/stale"
+        )
 
 
 _instruments: Instruments | None = None

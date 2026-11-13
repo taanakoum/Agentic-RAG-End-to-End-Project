@@ -50,6 +50,7 @@ async def _clean_state(infra: Infrastructure) -> None:
         await session.commit()
     await delete_keys(infra.redis, "rl:*")
     await delete_keys(infra.redis, "llmc:*")
+    await delete_keys(infra.redis, "retr:*")
     for pattern in ("celery", "unacked*", "_kombu*"):  # leftovers from earlier tests' broker use
         await delete_keys(infra.redis, pattern)
     async with infra.session_factory() as session:

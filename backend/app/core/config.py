@@ -183,6 +183,11 @@ class Settings(BaseSettings):
     rerank_candidates: int = Field(default=5, ge=1, le=200)
     rerank_timeout_s: float = Field(default=10.0, gt=0)
     rerank_max_chars: int = Field(default=2000, ge=100)
+    # retrieval cache (ranked chunk ids per user, query and knowledge-base version; ADR-036)
+    retrieval_cache_enabled: bool = True
+    retrieval_cache_ttl_s: int = Field(default=600, ge=1)
+    retrieval_cache_timeout_s: float = Field(default=0.25, gt=0)
+    retrieval_cache_max_bytes: int = Field(default=65536, ge=1024)
     inference_threads: int = Field(default=2, ge=1, le=32)
     warm_models_on_startup: bool = False
     # Sessions and chat turns (docs/spec/05)

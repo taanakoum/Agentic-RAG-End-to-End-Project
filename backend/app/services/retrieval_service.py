@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 
 from qdrant_client import AsyncQdrantClient
+from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
@@ -24,6 +25,7 @@ from app.core.logging import get_logger
 from app.infra.rate_limit import RateLimiter, subject_key
 from app.ingestion.embedding import get_embedder
 from app.repositories.documents import DocumentRepository
+from app.retrieval.cache import RetrievalCache, knowledge_base_fingerprint
 from app.retrieval.models import RankedChunk, RetrievalMode, RetrievalResult
 from app.retrieval.rerank import get_reranker
 from app.retrieval.retriever import Retriever
@@ -41,7 +43,9 @@ class RetrievalService:
         qdrant: AsyncQdrantClient,
         executor: ThreadPoolExecutor,
         limiter: RateLimiter,
+        redis: AsyncRedis | None = None,
     ) -> None:
+        self._cache = RetrievalCache(redis, settings) if redis is not None else None
         self._settings = settings
         self._docs = DocumentRepository(session)
         self._limiter = limiter
@@ -102,6 +106,7 @@ class RetrievalService:
             get_embedder(s),
             get_reranker(s),
             self._executor,
+            cache=self._cache,
         )
         result = await retriever.search(
             user_id=user.id,
@@ -109,6 +114,7 @@ class RetrievalService:
             document_ids=list(readable),
             mode=mode or self.default_mode(),
             top_k=k,
+            knowledge_base=knowledge_base_fingerprint(readable),
         )
         result.readable_documents = len(readable)
         if not result.chunks:

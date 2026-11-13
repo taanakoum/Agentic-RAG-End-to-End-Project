@@ -63,6 +63,7 @@ def build_retrieval_service(session: AsyncSession, infra: Infrastructure) -> Ret
         qdrant=infra.qdrant,
         executor=infra.inference_executor,
         limiter=infra.rate_limiter,
+        redis=infra.redis,
     )
 
 
