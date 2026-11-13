@@ -202,8 +202,10 @@ class Settings(BaseSettings):
     checkpoint_init_timeout_s: float = Field(default=30.0, gt=0)
     # Long-term memory
     qdrant_memories_collection: str = "memories"
-    # calibrated with the real model (evaluation/reports/memory_threshold.md): 0.60 retrieves
-    # 94% of relevant memories and 0% for unrelated queries; 0.50 would surface noise for 56%
+    # calibrated with the real model (evaluation/reports/memory_threshold.md, set v2: 30 memories,
+    # 50 relevant and 31 irrelevant queries): 0.60 recalls 86% of relevant memories and retrieves
+    # something for 19% of irrelevant queries (12% unrelated, 25% near-miss); 0.55 would recall 92%
+    # but retrieve for 52%, 0.65 only 56% recall. Kept at 0.60.
     memory_min_score: float = Field(default=0.6, ge=0.0, le=1.0)
     memory_search_k: int = Field(default=5, ge=1, le=20)
     memory_max_per_user: int = Field(default=500, ge=1)
