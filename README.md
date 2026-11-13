@@ -244,6 +244,21 @@ configurations, they do not promise quality on your data; full tables and caveat
 | hybrid (RRF) | 0.72 | 0.92 | 0.82 | 10 ms |
 | hybrid + cross-encoder re-rank (default) | 0.94 | 0.94 | 0.94 | 2.2 s |
 
+The same four configurations on **real public documents** (NIST SP 800-63B, 80 pages, and "Attention
+Is All You Need", 15 pages; 28 hand-written questions; the files are downloaded and hash-checked, never
+committed; [report](evaluation/reports/retrieval_real_docs.md)) look quite different, which is why the
+synthetic numbers above must not be read as a promise:
+
+| Retrieval configuration (real documents) | hit@1 | hit@3 | MRR |
+|---|---|---|---|
+| dense only | 0.61 | 0.71 | 0.68 |
+| BM25 only | 0.39 | 0.54 | 0.51 |
+| hybrid (RRF) | 0.46 | 0.68 | 0.61 |
+| hybrid + cross-encoder re-rank (default) | 0.64 | 0.75 | 0.72 |
+
+(On these documents plain hybrid is *worse* than dense alone and the re-ranker recovers it; the ground
+truth is strict, one sentence = one chunk, so absolute values are pessimistic.)
+
 With real, larger public documents in a real browser
 ([report](evaluation/reports/browser_tour_real_docs.md)): an 80-page NIST standard, a 15-page research
 paper and a Word file were processed in 220 s, 49 s and 51 s on a laptop CPU, and six questions about

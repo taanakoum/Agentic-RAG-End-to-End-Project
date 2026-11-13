@@ -4,7 +4,8 @@
 pipeline. The default `RuleExtractor` stores ONLY what the user explicitly states about
 themselves ("remember that ...", "my name is ...", "I prefer ...", "call me ..."): no model call,
 deterministic, cheap and conservative. `app.memory.llm_extract.LlmMemoryExtractor` is the optional
-model-based alternative (MEMORY_LLM_EXTRACTION=true, ADR-037); it falls back to this one on any error.
+model-based alternative (MEMORY_LLM_EXTRACTION=true, ADR-037); on any error it falls back to
+this one.
 """
 
 from __future__ import annotations

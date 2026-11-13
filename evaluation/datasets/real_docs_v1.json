@@ -1,0 +1,190 @@
+{
+  "version": "real-docs-v1",
+  "note": "Source URLs and SHA-256 of two public documents; the files are never committed (python evaluation/retrieval/real_docs.py --download). NIST SP 800-63B is the 2017 edition (3rd revision), now withdrawn and superseded by 800-63B-4; it is used as a stable public-domain text. Each question carries the answer-bearing sentence copied from the document (extracted by the production parser): a chunk is relevant iff it contains that sentence.",
+  "documents": [
+    {
+      "name": "nist-sp-800-63b",
+      "title": "NIST SP 800-63B Digital Identity Guidelines: Authentication and Lifecycle Management",
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-63b.pdf",
+      "sha256": "ccfce7510a1267933f912d023306c6e7d485f21be63d271108b61aad6139127e",
+      "filename": "nist_sp_800-63b.pdf"
+    },
+    {
+      "name": "attention-is-all-you-need",
+      "title": "Attention Is All You Need (Vaswani et al., 2017, arXiv:1706.03762v7)",
+      "url": "https://arxiv.org/pdf/1706.03762v7",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "filename": "attention_is_all_you_need.pdf"
+    }
+  ],
+  "questions": [
+    {
+      "id": "r01",
+      "doc": "nist-sp-800-63b",
+      "question": "What is the minimum length for a password that the user picks themselves?",
+      "sentence": "Verifiers SHALL require subscriber-chosen memorized secrets to be at least 8 characters in length."
+    },
+    {
+      "id": "r02",
+      "doc": "nist-sp-800-63b",
+      "question": "How many failed sign-in attempts in a row may an account allow?",
+      "sentence": "Unless otherwise specified in the description of a given authenticator, the verifier SHALL limit consecutive failed authentication attempts on a single account to no more than 100."
+    },
+    {
+      "id": "r03",
+      "doc": "nist-sp-800-63b",
+      "question": "Does the standard want people to change their passwords on a schedule?",
+      "sentence": "Verifiers SHOULD NOT require memorized secrets to be changed arbitrarily (e.g., periodically)."
+    },
+    {
+      "id": "r04",
+      "doc": "nist-sp-800-63b",
+      "question": "How should passwords be stored by the service?",
+      "sentence": "Memorized secrets SHALL be salted and hashed using a suitable one-way key derivation function."
+    },
+    {
+      "id": "r05",
+      "doc": "nist-sp-800-63b",
+      "question": "What is the smallest salt size allowed?",
+      "sentence": "The salt SHALL be at least 32 bits in length and be chosen arbitrarily so as to minimize salt value collisions among stored hashes."
+    },
+    {
+      "id": "r06",
+      "doc": "nist-sp-800-63b",
+      "question": "How many PBKDF2 rounds are recommended at a minimum?",
+      "sentence": "Therefore, the iteration count SHOULD be as large as verification server performance will allow, typically at least 10,000 iterations."
+    },
+    {
+      "id": "r07",
+      "doc": "nist-sp-800-63b",
+      "question": "After how much idle time must a user at the highest assurance level authenticate again?",
+      "sentence": "Reauthentication of the subscriber SHALL be repeated following any period of inactivity lasting 15 minutes or longer."
+    },
+    {
+      "id": "r08",
+      "doc": "nist-sp-800-63b",
+      "question": "How long can an AAL1 session last before the person has to sign in again?",
+      "sentence": "At AAL1, reauthentication of the subscriber SHOULD be repeated at least once per 30 days during an extended usage session, regardless of user activity."
+    },
+    {
+      "id": "r09",
+      "doc": "nist-sp-800-63b",
+      "question": "Is it acceptable to send one-time codes by phone call or text message?",
+      "sentence": "Use of the PSTN for out-of-band verification is RESTRICTED as described in this section and in Section 5.2.10."
+    },
+    {
+      "id": "r10",
+      "doc": "nist-sp-800-63b",
+      "question": "Should the sign-in form let people paste their password?",
+      "sentence": "Verifiers SHOULD permit claimants to use \"paste\" functionality when entering a memorized secret."
+    },
+    {
+      "id": "r11",
+      "doc": "nist-sp-800-63b",
+      "question": "Should services force users to include symbols and uppercase letters in passwords?",
+      "sentence": "Verifiers SHOULD NOT impose other composition rules (e.g., requiring mixtures of different character types or prohibiting consecutively repeated characters) for memorized secrets."
+    },
+    {
+      "id": "r12",
+      "doc": "nist-sp-800-63b",
+      "question": "What flag must a session cookie carry so that it is only sent over encrypted connections?",
+      "sentence": "SHALL be tagged to be accessible only on secure (HTTPS) sessions."
+    },
+    {
+      "id": "r13",
+      "doc": "nist-sp-800-63b",
+      "question": "How much randomness must a code sent over a separate channel have at least?",
+      "sentence": "The verifier SHALL generate random authentication secrets with at least 20 bits of entropy using an approved random bit generator [SP 800-90Ar1]."
+    },
+    {
+      "id": "r14",
+      "doc": "nist-sp-800-63b",
+      "question": "What delay must follow failed fingerprint or face attempts?",
+      "sentence": "Impose a delay of at least 30 seconds before the next attempt, increasing exponentially with each successive attempt"
+    },
+    {
+      "id": "r15",
+      "doc": "nist-sp-800-63b",
+      "question": "What is the appendix's view of other protections compared with strict complexity requirements?",
+      "sentence": "Furthermore, other mitigations such as blacklists, secure hashed storage, and rate limiting are more effective at preventing modern brute-force attacks."
+    },
+    {
+      "id": "r16",
+      "doc": "attention-is-all-you-need",
+      "question": "How many identical layers make up the encoder?",
+      "sentence": "Encoder: The encoder is composed of a stack of N = 6 identical layers."
+    },
+    {
+      "id": "r17",
+      "doc": "attention-is-all-you-need",
+      "question": "How many attention heads does the base model use?",
+      "sentence": "In this work we employ h = 8 parallel attention layers, or heads."
+    },
+    {
+      "id": "r18",
+      "doc": "attention-is-all-you-need",
+      "question": "What is the size of the inner layer of the position-wise network?",
+      "sentence": "The dimensionality of input and output is dmodel = 512, and the inner-layer has dimensionality dff = 2048."
+    },
+    {
+      "id": "r19",
+      "doc": "attention-is-all-you-need",
+      "question": "Which kind of functions generate the position signal added to the embeddings?",
+      "sentence": "In this work, we use sine and cosine functions of different frequencies"
+    },
+    {
+      "id": "r20",
+      "doc": "attention-is-all-you-need",
+      "question": "How big was the English-German training set?",
+      "sentence": "We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million sentence pairs."
+    },
+    {
+      "id": "r21",
+      "doc": "attention-is-all-you-need",
+      "question": "On what hardware were the models trained?",
+      "sentence": "We trained our models on one machine with 8 NVIDIA P100 GPUs."
+    },
+    {
+      "id": "r22",
+      "doc": "attention-is-all-you-need",
+      "question": "How long did training of the smaller models take?",
+      "sentence": "We trained the base models for a total of 100,000 steps or 12 hours."
+    },
+    {
+      "id": "r23",
+      "doc": "attention-is-all-you-need",
+      "question": "How many warm-up steps were used with the optimizer?",
+      "sentence": "We used warmup_steps = 4000."
+    },
+    {
+      "id": "r24",
+      "doc": "attention-is-all-you-need",
+      "question": "What translation quality score did the largest model reach on English to German?",
+      "sentence": "On the WMT 2014 English-to-German translation task, the big transformer model (Transformer (big) in Table 2) outperforms the best previously reported models (including ensembles) by more than 2.0 BLEU, establishing a new state-of-the-art BLEU score of 28.4."
+    },
+    {
+      "id": "r25",
+      "doc": "attention-is-all-you-need",
+      "question": "How large a vocabulary was used for the parsing experiments with extra unlabeled data?",
+      "sentence": "We used a vocabulary of 16K tokens for the WSJ only setting and a vocabulary of 32K tokens for the semi-supervised setting."
+    },
+    {
+      "id": "r26",
+      "doc": "attention-is-all-you-need",
+      "question": "How are attention weights computed from queries and keys?",
+      "sentence": "We compute the dot products of the query with all keys, divide each by √dk, and apply a softmax function to obtain the weights on the values."
+    },
+    {
+      "id": "r27",
+      "doc": "attention-is-all-you-need",
+      "question": "What do the authors claim is new about their model in the conclusion?",
+      "sentence": "In this work, we presented the Transformer, the first sequence transduction model based entirely on attention, replacing the recurrent layers most commonly used in encoder-decoder architectures with multi-headed self-attention."
+    },
+    {
+      "id": "r28",
+      "doc": "attention-is-all-you-need",
+      "question": "How many sentences were in the bigger English-French training corpus?",
+      "sentence": "For English-French, we used the significantly larger WMT 2014 English-French dataset consisting of 36M sentences and split tokens into a 32000 word-piece vocabulary [38]."
+    }
+  ]
+}
