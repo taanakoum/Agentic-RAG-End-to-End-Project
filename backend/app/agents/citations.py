@@ -32,7 +32,10 @@ from app.ingestion.indexing import point_id
 MAX_EXCERPT_CHARS = 300
 MAX_CITATIONS = 8
 MIN_QUOTE_CHARS = 12
-_MARKER = re.compile(r"\s?\[(S[0-9]{1,3})\]")
+# One marker may group several labels: [S1], [S1, S2], [S1; S3] (models do group them; found by the
+# real-document browser tour, where "[S1, S2]" reached the user unconverted).
+_LABEL = re.compile(r"S[0-9]{1,3}")
+_MARKER = re.compile(r"\s?\[\s*(S[0-9]{1,3}(?:\s*[,;]\s*S[0-9]{1,3})*)\s*\]")
 _FUZZY_MIN_OVERLAP = 0.6
 
 
@@ -172,18 +175,25 @@ def verify_draft(
 
 
 def _renumber(answer: str, verified: Sequence[str]) -> tuple[str, list[str]]:
-    """Replace [S3]-style markers by [1], [2], ... in order of first appearance; drop the rest."""
+    """Replace [S3]-style markers by [1], [2], ... in order of first appearance; drop the rest.
+
+    A grouped marker such as [S1, S4] becomes [1, 2]; unverified labels inside it are dropped, and
+    a marker with no verified label disappears.
+    """
     order: list[str] = []
     for match in _MARKER.finditer(answer):
-        label = match.group(1)
-        if label in verified and label not in order:
-            order.append(label)
+        for label in _LABEL.findall(match.group(1)):
+            if label in verified and label not in order:
+                order.append(label)
     order += [label for label in verified if label not in order]
     number = {label: index + 1 for index, label in enumerate(order)}
 
     def replace(match: re.Match[str]) -> str:
-        label = match.group(1)
-        return f" [{number[label]}]" if label in number else ""
+        numbers: list[int] = []
+        for label in _LABEL.findall(match.group(1)):
+            if label in number and number[label] not in numbers:
+                numbers.append(number[label])
+        return f" [{', '.join(map(str, numbers))}]" if numbers else ""
 
     return _MARKER.sub(replace, answer).strip(), order
 

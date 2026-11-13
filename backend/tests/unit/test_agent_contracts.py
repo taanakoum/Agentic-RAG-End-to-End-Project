@@ -263,6 +263,32 @@ def test_markers_are_numbered_in_order_of_appearance_and_unverified_markers_vani
     assert result.dropped == ["unknown_source"]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Rules apply [S2, S1].", "Rules apply [1, 2]."),
+        ("Rules apply [S1; S2].", "Rules apply [1, 2]."),
+        ("Rules apply [ S2 ,S9, S1 ].", "Rules apply [1, 2]."),  # unverified label dropped
+        ("Rules apply [S1, S1].", "Rules apply [1]."),
+        ("Rules apply [S8, S9].", "Rules apply."),  # nothing verified: the marker vanishes
+    ],
+)
+def test_grouped_markers_are_numbered_and_never_reach_the_user_raw(
+    text: str, expected: str
+) -> None:
+    """Found by the real-document browser tour: '[S1, S2]' was shown to the user unconverted."""
+    result = verify(
+        draft(
+            text,
+            cite("S1", "larger than 25 megabytes"),
+            cite("S2", "closed automatically after 30 minutes"),
+        )
+    )
+    assert result.answer == expected  # numbers follow first appearance (S2 first -> [1])
+    assert "S1" not in result.answer and "S2" not in result.answer and "S9" not in result.answer
+    assert len(result.citations) == 2
+
+
 def test_a_fabricated_source_label_is_dropped_and_leaves_a_problem() -> None:
     result = verify(draft("It is 50 GB [S7].", cite("S7", "limit is 50 gigabytes")))
     assert result.citations == [] and result.dropped == ["unknown_source"]
