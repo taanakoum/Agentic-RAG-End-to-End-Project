@@ -61,6 +61,27 @@ class CheckpointerProvider:
         self._lock = asyncio.Lock()
         self._step = "idle"  # what the first initialisation is doing (for the timeout log)
 
+    @property
+    def ready(self) -> bool:
+        return self._saver is not None
+
+    async def warm_up(self) -> bool:
+        """Initialise now (called from a background task at start-up). Never raises.
+
+        The first chat turn then does not pay for opening the pool and for table setup; if this
+        fails (e.g. another backend holds the setup advisory lock) the lazy path in `get` simply
+        tries again on the first request.
+        """
+        try:
+            await self.get()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # a failed warm-up must never matter to start-up
+            log.warning("checkpointer_warmup_failed", error_type=type(exc).__name__)
+            return False
+        log.info("checkpointer_warmup_done")
+        return True
+
     async def get(self) -> AsyncPostgresSaver:
         if self._saver is not None:
             return self._saver

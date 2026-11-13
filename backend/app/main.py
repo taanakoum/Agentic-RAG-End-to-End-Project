@@ -48,9 +48,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         warmup: asyncio.Task[bool] | None = None
         if settings.warm_models_on_startup:
             warmup = asyncio.create_task(warm_models(settings, infra.inference_executor))
+        # open the checkpointer pool in the background so the first chat turn does not wait for it
+        # (the lazy path in `get` remains the fallback; this never blocks or fails start-up)
+        checkpointer_warmup = asyncio.create_task(infra.checkpointer.warm_up())
         try:
             yield
         finally:
+            checkpointer_warmup.cancel()
             if warmup is not None:
                 warmup.cancel()
             await infra.close()
