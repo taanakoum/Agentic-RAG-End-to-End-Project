@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from collections.abc import MutableMapping
 from typing import Any
@@ -64,6 +65,39 @@ def add_trace_ids(
     return event_dict
 
 
+_BENIGN_CELERY_TEARDOWN = re.compile(
+    r"^Error on .*'NoneType' object has no attribute 'connection_errors'"
+)
+
+
+class KnownCeleryNoiseFilter(logging.Filter):
+    """Downgrade ONE known-benign upstream message from ERROR to DEBUG (KI-008).
+
+    When Redis restarts under a running worker, kombu closes a connection that is already gone and
+    Celery logs `Error on restarting Gossip: AttributeError("'NoneType' object has no attribute
+    'connection_errors'")` with a long traceback, although the worker reconnects and keeps working.
+    Celery/kombu 5.7.0 (the newest releases) still do this. Only an ERROR record of the
+    `celery.bootsteps` logger whose message matches this exact text is affected; everything else
+    passes untouched, and the downgraded record is still available at DEBUG.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno != logging.ERROR or not _BENIGN_CELERY_TEARDOWN.match(
+            record.getMessage()
+        ):
+            return True
+        target = logging.getLogger(record.name)
+        if target.isEnabledFor(logging.DEBUG):
+            target.debug("%s (known benign, downgraded)", record.getMessage())
+        return False
+
+
+def install_celery_noise_filter() -> None:
+    logger = logging.getLogger("celery.bootsteps")
+    if not any(isinstance(f, KnownCeleryNoiseFilter) for f in logger.filters):
+        logger.addFilter(KnownCeleryNoiseFilter())
+
+
 def configure_logging(*, level: str, json_output: bool, service: str) -> None:
     """Configure structlog and route stdlib logging (uvicorn, celery, sqlalchemy) through it."""
     shared: list[Any] = [
@@ -104,6 +138,7 @@ def configure_logging(*, level: str, json_output: bool, service: str) -> None:
     root.setLevel(level)
     for noisy in ("uvicorn.access",):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    install_celery_noise_filter()
     structlog.contextvars.bind_contextvars(service=service)
 
 
