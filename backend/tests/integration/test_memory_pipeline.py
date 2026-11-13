@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any
 
 import httpx2
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import text
 
 from app.core.config import get_settings
@@ -16,10 +20,12 @@ from app.infra.container import Infrastructure
 from app.ingestion.outbox import dispatch_outbox
 from app.ingestion.reconcile import reconcile
 from app.ingestion.runtime import WorkerRuntime
+from app.llm.base import ChatModel
+from app.memory import llm_extract
 from app.memory.pipeline import consolidate_conversation, sweep_retention
 from app.services.chat_turns import ChatTurnService
 from app.tasks.celery_app import celery_app
-from tests.fakes import HashEmbedder
+from tests.fakes import HashEmbedder, ScriptedModel
 from tests.integration.docs_helpers import API, new_user, scalar
 from tests.integration.memory_helpers import (
     add_memory,
@@ -421,3 +427,121 @@ async def test_background_indexing_does_not_reset_the_retention_clock(
         ).scalar()
         assert age is True  # indexing did not count as an edit
         assert sweep_retention(session) == 1
+
+
+# ------------------------------------------------------------------ optional model-based extractor
+
+
+def llm_runtime(
+    runtime: WorkerRuntime, monkeypatch: pytest.MonkeyPatch, model: ScriptedModel, *, flag: bool
+) -> WorkerRuntime:
+    """A runtime whose settings enable (or not) the model-based extractor over a scripted model."""
+    settings = runtime.settings.model_copy(
+        update={
+            "memory_llm_extraction": flag,
+            "llm_base_url": "http://127.0.0.1:9/v1",
+            "llm_model": "scripted",
+            "llm_api_key": SecretStr("not-a-real-key"),
+        }
+    )
+
+    @asynccontextmanager
+    async def scripted_model(_: Any) -> AsyncGenerator[ChatModel]:
+        yield model
+
+    monkeypatch.setattr(llm_extract, "hosted_model", scripted_model)
+    return replace(runtime, settings=settings)
+
+
+def facts_reply(*texts: str) -> str:
+    return json.dumps({"facts": [{"fact": t, "kind": "episodic", "importance": 4} for t in texts]})
+
+
+async def test_model_extracted_facts_are_stored_with_the_same_rules_as_rule_based_ones(
+    client: httpx2.AsyncClient,
+    infra: Infrastructure,
+    runtime: WorkerRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await new_user(client)
+    user = await user_id_of(client, headers)
+    await enable_memory(client, headers)
+    conversation = await new_conversation(client, headers)
+    await say(infra, user, conversation, "We are moving the billing service to Go.", "turn-key-001")
+    model = ScriptedModel(
+        facts_reply(
+            "The user's team is moving the billing service to Go.",
+            "The user's password is hunter2.",  # sensitive: dropped
+            "The user's card is 4111 1111 1111 1111.",  # sensitive: dropped
+        )
+    )
+    rt = llm_runtime(runtime, monkeypatch, model, flag=True)
+    assert await asyncio.to_thread(consolidate_conversation, rt, conversation, user) == "created:1"
+    assert len(model.calls) == 1
+    stored = await memories(infra, user)
+    assert [m.content for m in stored] == ["The user's team is moving the billing service to Go."]
+    assert {m.source for m in stored} == {"consolidation"}
+    # the same message is never examined twice (no second model call), and duplicates are skipped
+    assert await asyncio.to_thread(consolidate_conversation, rt, conversation, user) == (
+        "nothing_new"
+    )
+    assert len(model.calls) == 1
+    await say(infra, user, conversation, "Still on the billing move.", "turn-key-002")
+    again = llm_runtime(runtime, monkeypatch, ScriptedModel(model.script[0]), flag=True)
+    assert await asyncio.to_thread(consolidate_conversation, again, conversation, user) == (
+        "created:0"
+    )
+    assert len(await memories(infra, user)) == 1
+
+
+async def test_an_invalid_model_answer_falls_back_to_the_rules(
+    client: httpx2.AsyncClient,
+    infra: Infrastructure,
+    runtime: WorkerRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await new_user(client)
+    user = await user_id_of(client, headers)
+    await enable_memory(client, headers)
+    conversation = await new_conversation(client, headers)
+    await say(infra, user, conversation, "Remember that I deploy on Fridays.", "turn-key-001")
+    model = ScriptedModel("Sorry, I cannot produce JSON today.")
+    rt = llm_runtime(runtime, monkeypatch, model, flag=True)
+    assert await asyncio.to_thread(consolidate_conversation, rt, conversation, user) == "created:1"
+    assert [m.content for m in await memories(infra, user)] == ["I deploy on Fridays."]
+
+
+async def test_with_the_flag_off_the_model_is_never_called(
+    client: httpx2.AsyncClient,
+    infra: Infrastructure,
+    runtime: WorkerRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await new_user(client)
+    user = await user_id_of(client, headers)
+    await enable_memory(client, headers)
+    conversation = await new_conversation(client, headers)
+    await say(infra, user, conversation, "Remember that I deploy on Fridays.", "turn-key-001")
+    model = ScriptedModel(facts_reply("The user is a spy."))
+    rt = llm_runtime(runtime, monkeypatch, model, flag=False)
+    assert await asyncio.to_thread(consolidate_conversation, rt, conversation, user) == "created:1"
+    assert model.calls == []
+    assert [m.content for m in await memories(infra, user)] == ["I deploy on Fridays."]
+
+
+async def test_without_consent_the_model_is_not_asked_and_nothing_is_stored(
+    client: httpx2.AsyncClient,
+    infra: Infrastructure,
+    runtime: WorkerRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = await new_user(client)
+    user = await user_id_of(client, headers)
+    conversation = await new_conversation(client, headers)  # memory stays OFF
+    await say(infra, user, conversation, "We are moving the billing service to Go.", "turn-key-001")
+    model = ScriptedModel(facts_reply("The user's team is moving the billing service to Go."))
+    rt = llm_runtime(runtime, monkeypatch, model, flag=True)
+    assert await asyncio.to_thread(consolidate_conversation, rt, conversation, user) == (
+        "consent_off"
+    )
+    assert model.calls == [] and await memories(infra, user) == []

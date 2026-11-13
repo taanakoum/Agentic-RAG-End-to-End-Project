@@ -111,6 +111,7 @@ _CATEGORY_FILES: dict[str, frozenset[str]] = {
             "test_telemetry.py",
             "test_feedback_api.py",
             "test_outages.py",
+            "test_retrieval_cache.py",
         }
     ),
     "concurrency": frozenset(
@@ -133,6 +134,8 @@ _CATEGORY_FILES: dict[str, frozenset[str]] = {
             "test_storage_contract.py",
             "test_outages.py",
             "test_agent_eval.py",
+            "test_retrieval_cache.py",
+            "test_checkpointer_init.py",
         }
     ),
 }

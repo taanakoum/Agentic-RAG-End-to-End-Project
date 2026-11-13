@@ -208,6 +208,9 @@ class Settings(BaseSettings):
     memory_search_k: int = Field(default=5, ge=1, le=20)
     memory_max_per_user: int = Field(default=500, ge=1)
     memory_max_chars: int = Field(default=500, ge=20, le=5000)
+    # model-based fact extraction (ADR-037): OFF by default (one model call per consolidation)
+    memory_llm_extraction: bool = False
+    memory_llm_max_tokens: int = Field(default=1024, ge=64, le=8192)
     memory_consolidate_every: int = Field(default=6, ge=2)  # unconsolidated messages
     memory_retention_sweep_interval_s: float = Field(default=3600.0, ge=10.0)
     rl_feedback_limit: int = Field(default=120, ge=1)

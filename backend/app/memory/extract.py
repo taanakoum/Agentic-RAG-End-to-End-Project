@@ -3,8 +3,8 @@
 `MemoryExtractor` is a protocol so the extraction strategy can change without touching the
 pipeline. The default `RuleExtractor` stores ONLY what the user explicitly states about
 themselves ("remember that ...", "my name is ...", "I prefer ...", "call me ..."): no model call,
-deterministic, cheap and conservative. An LLM-based extractor for episodic memories and
-conversation summaries is planned for the agent phase (KNOWN_ISSUES KI-026).
+deterministic, cheap and conservative. `app.memory.llm_extract.LlmMemoryExtractor` is the optional
+model-based alternative (MEMORY_LLM_EXTRACTION=true, ADR-037); it falls back to this one on any error.
 """
 
 from __future__ import annotations

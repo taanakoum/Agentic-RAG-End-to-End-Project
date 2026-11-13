@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.ingestion.outbox import KIND_PURGE_MEMORY
 from app.ingestion.runtime import WorkerRuntime
-from app.memory.extract import Candidate, ConversationTurn, MemoryExtractor, RuleExtractor
+from app.memory.extract import Candidate, ConversationTurn, MemoryExtractor
 from app.memory.index import delete_user_vectors, delete_vector, upsert_vector
+from app.memory.llm_extract import build_extractor
 from app.memory.sensitive import sensitive_reason
 from app.models.chat import Conversation, Message
 from app.models.document import OutboxEvent
@@ -128,8 +129,8 @@ def consolidate_conversation(
     Messages written while memory was OFF are skipped for good (never examined retroactively
     after the user switches it on).
     """
-    extractor = extractor or RuleExtractor()
     s = rt.settings
+    extractor = extractor or build_extractor(s)
     with rt.session_factory() as session:
         conversation = session.execute(
             select(Conversation)
