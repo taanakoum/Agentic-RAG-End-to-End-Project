@@ -41,7 +41,11 @@ async def register(
     background: BackgroundTasks,
 ) -> UserPublic:
     user = await service.register(
-        email=body.email, password=body.password, display_name=body.display_name, client_ip=ip
+        email=body.email,
+        password=body.password,
+        display_name=body.display_name,
+        client_ip=ip,
+        invite_code=body.invite_code,
     )
     background.add_task(send_verification_email, infra, user.id)
     return UserPublic.model_validate(user)

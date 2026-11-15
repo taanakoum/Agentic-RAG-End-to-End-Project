@@ -69,6 +69,12 @@ def _ping_workers(timeout: float) -> int:
 
 
 async def _check_workers(infra: Infrastructure) -> None:
+    if infra.settings.task_runner == "inline":
+        from app.tasks.inline import get_inline_runner
+
+        if not get_inline_runner(infra.settings).running:
+            raise RuntimeError("the in-process task runner is not running")
+        return
     count = await asyncio.to_thread(_ping_workers, infra.settings.celery_health_timeout_s)
     if count == 0:
         raise RuntimeError("no celery workers responded")

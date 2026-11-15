@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.exceptions import (
     AuthenticationError,
+    AuthorizationError,
     DuplicateResourceError,
     ErrorDetail,
     RequestValidationAppError,
@@ -93,7 +95,13 @@ class AuthService:
     # ------------------------------------------------------------ registration
 
     async def register(
-        self, *, email: str, password: str, display_name: str | None, client_ip: str
+        self,
+        *,
+        email: str,
+        password: str,
+        display_name: str | None,
+        client_ip: str,
+        invite_code: str | None = None,
     ) -> User:
         s = self._settings
         await self._limiter.hit(
@@ -102,6 +110,12 @@ class AuthService:
             limit=s.rl_register_ip_limit,
             window_s=s.rl_register_ip_window_s,
         )
+        required = s.registration_invite_code.get_secret_value()
+        # Checked after the per-IP limit, so guessing the code is rate limited too.
+        if required and not hmac.compare_digest((invite_code or "").encode(), required.encode()):
+            raise AuthorizationError(
+                "Sign-up on this deployment needs a valid invite code.", code="INVITE_REQUIRED"
+            )
         try:
             normalized = normalize_email(email)
         except InvalidEmailError as exc:

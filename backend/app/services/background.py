@@ -33,13 +33,13 @@ async def kick_dispatcher(infra: Infrastructure) -> None:
     import asyncio
 
     from app.ingestion.outbox import dispatch_outbox
-    from app.tasks.celery_app import celery_app
+    from app.tasks.transport import task_sender
 
     try:
         await asyncio.to_thread(
             dispatch_outbox,
             infra.sync_session_factory,
-            celery_app,
+            task_sender(infra.settings),
             batch_size=infra.settings.outbox_batch_size,
         )
     except Exception:

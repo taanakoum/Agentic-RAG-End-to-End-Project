@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from celery import Celery
 from sqlalchemy import event, select
@@ -12,6 +12,9 @@ from app.core.logging import get_logger
 from app.core.telemetry import inject_traceparent
 from app.ingestion.store import utcnow
 from app.models.document import OutboxEvent
+
+if TYPE_CHECKING:
+    from app.tasks.transport import TaskSender
 
 log = get_logger(__name__)
 
@@ -63,7 +66,7 @@ def _args_for(event: OutboxEvent) -> list[str]:
 
 
 def dispatch_outbox(
-    session_factory: sessionmaker[Session], celery: Celery, *, batch_size: int
+    session_factory: sessionmaker[Session], celery: Celery | TaskSender, *, batch_size: int
 ) -> int:
     """Publish up to `batch_size` unsent events. Returns how many were sent.
 

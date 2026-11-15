@@ -203,6 +203,20 @@ class Settings(BaseSettings):
     # Dense query prefix (e.g. BGE's retrieval instruction); empty = none. Chosen by evaluation.
     dense_query_prefix: str = ""
     rerank_enabled: bool = True
+    # Retrieval when re-ranking is off. Without the cross-encoder, plain RRF fusion can rank worse
+    # than dense search alone (measured on real documents); the free variant picks by evaluation.
+    retrieval_mode_without_rerank: Literal["hybrid", "dense"] = "hybrid"
+    # Free-tier variant (branch free-tier, ADR-042). Defaults keep the full-feature behaviour.
+    deployment_profile: Literal["full", "free"] = "full"
+    task_runner: Literal["celery", "inline"] = "celery"
+    embedding_backend: Literal["local", "hosted"] = "local"
+    embedding_api_base_url: str = ""  # empty = LLM_BASE_URL
+    embedding_api_key: SecretStr = SecretStr("")  # empty = LLM_API_KEY
+    embedding_api_batch_size: int = Field(default=50, ge=1, le=250)
+    embedding_api_timeout_s: float = Field(default=30.0, gt=0)
+    embedding_api_max_attempts: int = Field(default=5, ge=1, le=10)
+    # Sign-up needs this code when set (the free variant has no email verification).
+    registration_invite_code: SecretStr = SecretStr("")
     reranker_model: str = "BAAI/bge-reranker-v2-m3-int8"
     rerank_candidates: int = Field(default=5, ge=1, le=200)
     rerank_timeout_s: float = Field(default=10.0, gt=0)
@@ -357,10 +371,20 @@ class Settings(BaseSettings):
                     "prod requires postgres_sslmode=verify-full (or, on one machine, "
                     "postgres_plaintext_private_network=true with a private host)"
                 )
-            if not self.require_verified_email:
-                raise ValueError("prod requires require_verified_email=true")
-            if self.email_backend != "smtp" or not self.smtp_host:
-                raise ValueError("prod requires email_backend=smtp and smtp_host")
+            if self.deployment_profile == "free":
+                # Free hosts block SMTP, so there is no email verification; an invite code keeps
+                # sign-up closed to strangers instead (ADR-042).
+                if len(self.registration_invite_code.get_secret_value()) < 12:
+                    raise ValueError(
+                        "the free profile requires registration_invite_code (12+ chars)"
+                    )
+                if self.task_runner != "inline":
+                    raise ValueError("the free profile requires task_runner=inline")
+            else:
+                if not self.require_verified_email:
+                    raise ValueError("prod requires require_verified_email=true")
+                if self.email_backend != "smtp" or not self.smtp_host:
+                    raise ValueError("prod requires email_backend=smtp and smtp_host")
             if self.argon2_memory_kib < 19456 or self.argon2_time_cost < 2:
                 raise ValueError("argon2 parameters are below the OWASP minimum for prod")
             if self.postgres_password.get_secret_value().lower() in _INSECURE_PASSWORDS:

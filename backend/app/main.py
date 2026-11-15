@@ -48,9 +48,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # open the checkpointer pool in the background so the first chat turn does not wait for it
         # (the lazy path in `get` remains the fallback; this never blocks or fails start-up)
         checkpointer_warmup = asyncio.create_task(infra.checkpointer.warm_up())
+        runner = None
+        if settings.task_runner == "inline":  # free-tier variant: no separate Celery worker
+            from app.tasks.inline import get_inline_runner
+
+            runner = get_inline_runner(settings)
+            runner.start()
         try:
             yield
         finally:
+            if runner is not None:
+                await asyncio.to_thread(runner.stop)
             checkpointer_warmup.cancel()
             if warmup is not None:
                 warmup.cancel()

@@ -17,6 +17,8 @@ class RegisterRequest(_Strict):
     # The upper bound only protects the hasher from huge inputs; the real policy is in the service.
     password: str = Field(min_length=1, max_length=1024, repr=False)
     display_name: str | None = Field(default=None, max_length=100)
+    # Required only when the deployment sets REGISTRATION_INVITE_CODE (free-tier variant).
+    invite_code: str | None = Field(default=None, max_length=128, repr=False)
 
 
 class LoginRequest(_Strict):

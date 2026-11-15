@@ -19,10 +19,14 @@ class FrontendConfig:
     # Shared with the API's FRONTEND_CLIENT_IP_SECRET; lets per-IP limits see the end user instead
     # of this server. Empty = do not forward the address.
     client_ip_secret: str = ""
+    # Free-tier variant: sign-up asks for the deployment's invite code.
+    invite_required: bool = False
 
     @classmethod
     def from_env(cls) -> FrontendConfig:
         return cls(
             api_base_url=os.environ.get("FRONTEND_API_URL", DEFAULT_API_URL).rstrip("/"),
             client_ip_secret=os.environ.get("FRONTEND_CLIENT_IP_SECRET", ""),
+            invite_required=os.environ.get("FRONTEND_INVITE_REQUIRED", "").lower()
+            in {"1", "true", "yes"},
         )

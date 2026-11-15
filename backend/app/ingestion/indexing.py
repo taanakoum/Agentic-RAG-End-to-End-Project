@@ -49,6 +49,13 @@ def point_id(document_id: uuid.UUID, version: int, chunk_index: int) -> str:
 def ensure_collection(client: QdrantClient, settings: Settings) -> None:
     name = collection_name(settings)
     if client.collection_exists(name):
+        vectors = client.get_collection(name).config.params.vectors
+        dense = vectors.get("dense") if isinstance(vectors, dict) else None
+        if dense is not None and dense.size != settings.embedding_dim:
+            raise RuntimeError(
+                f"collection {name} stores {dense.size}-dimensional vectors but EMBEDDING_DIM is "
+                f"{settings.embedding_dim}: use a new QDRANT_COLLECTION_PREFIX or re-index"
+            )
         return
     try:
         client.create_collection(

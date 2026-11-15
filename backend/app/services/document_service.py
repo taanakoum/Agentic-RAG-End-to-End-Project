@@ -37,7 +37,7 @@ from app.schemas.documents import (
 )
 from app.services.auth_service import AuthenticatedUser
 from app.storage.base import ObjectStorage, ObjectTooLargeError, StorageError
-from app.tasks.celery_app import celery_app
+from app.tasks.transport import task_sender
 
 log = get_logger(__name__)
 
@@ -215,7 +215,7 @@ class DocumentService:
             await asyncio.to_thread(
                 dispatch_outbox,
                 self._sync_sf,
-                celery_app,
+                task_sender(self._settings),
                 batch_size=self._settings.outbox_batch_size,
             )
         except Exception:

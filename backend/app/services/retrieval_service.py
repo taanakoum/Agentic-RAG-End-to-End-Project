@@ -54,7 +54,11 @@ class RetrievalService:
 
     def default_mode(self) -> RetrievalMode:
         s = self._settings
-        return RetrievalMode.HYBRID_RERANK if s.rerank_enabled else RetrievalMode.HYBRID
+        if s.rerank_enabled:
+            return RetrievalMode.HYBRID_RERANK
+        if s.retrieval_mode_without_rerank == "dense":
+            return RetrievalMode.DENSE
+        return RetrievalMode.HYBRID
 
     async def search(
         self,

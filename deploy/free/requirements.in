@@ -1,0 +1,40 @@
+# Free-tier image: the main dependencies minus Docling, OCR and torch (ADR-042).
+# Regenerate: uv export --frozen --no-hashes --no-dev --format requirements-txt > constraints.txt
+#             uv pip compile deploy/free/requirements.in -c constraints.txt --python-version 3.13
+#                 --python-platform x86_64-manylinux_2_28 -o deploy/free/requirements.txt
+fastapi==0.162.2
+uvicorn[standard]==0.54.0
+sqlalchemy[asyncio]==2.1.8
+asyncpg==0.32.0
+psycopg[binary]==3.3.8
+alembic==1.20.1
+pydantic==2.14.3
+pydantic-settings==2.16.2
+celery[redis]==5.7.0
+redis==8.1.0
+qdrant-client==1.20.0
+structlog==26.1.0
+argon2-cffi==25.1.0
+pyjwt==2.15.1
+email-validator==2.3.0
+pyotp==2.10.0
+cryptography==50.0.2
+boto3==1.43.126
+pypdf==7.0.0
+pypdfium2==5.15.1
+onnxruntime==1.31.1
+pillow==13.0.0
+python-multipart==0.0.33
+fastembed==0.9.1
+python-docx==1.2.0
+langchain-text-splitters
+langgraph>=1.2.20
+langgraph-checkpoint-postgres>=3.2.0
+psycopg-pool>=3.3.3
+httpx==0.28.1
+opentelemetry-sdk>=1.45.2
+opentelemetry-exporter-otlp-proto-http>=1.45.2
+opentelemetry-instrumentation-fastapi>=0.66b2
+opentelemetry-instrumentation-httpx>=0.66b2
+opentelemetry-instrumentation-redis>=0.66b2
+opentelemetry-instrumentation-celery>=0.66b2

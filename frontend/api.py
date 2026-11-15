@@ -234,10 +234,18 @@ class ApiClient:
 
     # ------------------------------------------------------------------ auth
 
-    def register(self, email: str, password: str, display_name: str | None = None) -> JSON:
+    def register(
+        self,
+        email: str,
+        password: str,
+        display_name: str | None = None,
+        invite_code: str | None = None,
+    ) -> JSON:
         body: JSON = {"email": email, "password": password}
         if display_name:
             body["display_name"] = display_name
+        if invite_code:
+            body["invite_code"] = invite_code
         return self._json("POST", "/auth/register", auth=False, json=body)
 
     def _take_tokens(self, body: JSON) -> LoginResult:

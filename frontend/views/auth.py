@@ -143,6 +143,14 @@ def _register_form() -> None:
             help="At least 12 characters; common or breached passwords are refused.",
         )
         confirm = st.text_input("Repeat password", type="password", key="reg_confirm")
+        invite = ""
+        if state.config().invite_required:
+            invite = st.text_input(
+                "Invite code",
+                type="password",
+                key="reg_invite",
+                help="This demo deployment is invite-only: ask its owner for the code.",
+            )
         submitted = st.form_submit_button(
             "Create account", type="primary", use_container_width=True
         )
@@ -155,7 +163,7 @@ def _register_form() -> None:
         st.error("The two passwords do not match.")
         return
     try:
-        state.api().register(email.strip(), password, name.strip() or None)
+        state.api().register(email.strip(), password, name.strip() or None, invite.strip() or None)
     except ApiError as exc:
         problem = describe(exc)
         state.show(problem)

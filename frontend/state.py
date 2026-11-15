@@ -26,6 +26,11 @@ def end_user_ip() -> str | None:
         return None
 
 
+def config() -> FrontendConfig:
+    cfg = st.session_state.get("config")
+    return cfg if isinstance(cfg, FrontendConfig) else FrontendConfig.from_env()
+
+
 def api() -> ApiClient:
     client = st.session_state.get("api")
     if client is None:

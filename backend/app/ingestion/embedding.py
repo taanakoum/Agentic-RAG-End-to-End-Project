@@ -80,7 +80,7 @@ class FastEmbedEmbedder:
 
 EmbedderFactory = Callable[[Settings], Embedder]
 
-_factory: EmbedderFactory = FastEmbedEmbedder
+_factory: EmbedderFactory | None = None  # None = choose from settings.embedding_backend
 _instance: Embedder | None = None
 _instance_lock = threading.Lock()
 
@@ -89,7 +89,7 @@ def set_embedder_factory(factory: EmbedderFactory | None) -> None:
     """Swap the embedder implementation (tests install a deterministic adapter)."""
     global _factory, _instance
     with _instance_lock:
-        _factory = factory or FastEmbedEmbedder
+        _factory = factory
         _instance = None
 
 
@@ -97,5 +97,13 @@ def get_embedder(settings: Settings) -> Embedder:
     global _instance
     with _instance_lock:
         if _instance is None:
-            _instance = _factory(settings)
+            factory = _factory
+            if factory is None:
+                if settings.embedding_backend == "hosted":
+                    from app.ingestion.hosted_embedding import HostedEmbedder
+
+                    factory = HostedEmbedder
+                else:
+                    factory = FastEmbedEmbedder
+            _instance = factory(settings)
         return _instance
