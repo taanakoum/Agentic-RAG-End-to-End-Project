@@ -9,10 +9,26 @@ Built with FastAPI, LangGraph, PostgreSQL, Qdrant, Redis/Celery and Streamlit. I
 against a **free hosted language model**: no GPU, no paid service and no local model download is needed
 for the language model.
 
-> Status: feature complete for the core product and thoroughly tested (1,202 automated tests passed; 93%
-> line coverage, strict type checking, security and failure-recovery suites, plus a real-browser
-> walk-through). Docker and cloud deployment verification remain open; load testing is skipped
-> at the owner's request. See [Status and limitations](#status-and-limitations).
+> Status: feature complete for the core product. 1,222 automated tests (93% line coverage) run against
+> real PostgreSQL, Redis and Qdrant; strict type checking; security and failure-recovery suites; an
+> end-to-end run in a real browser with real public documents. Two deployment variants are prepared
+> (see [Deployment](#deployment)); load testing and a first cloud deployment are the next steps.
+> See [Status and limitations](#status-and-limitations).
+
+## Highlights
+
+- **Answers you can check.** A LangGraph agent answers from the user's own documents; every citation
+  is verified by the server against the passages retrieved in that turn, and an unverifiable answer
+  becomes a refusal instead of a guess.
+- **Multi-user by construction.** Owner filter on every vector query, ownership checks on every route,
+  foreign ids return the same 404 as missing ones; Argon2id, rotating refresh tokens, two-factor login.
+- **Production patterns.** PostgreSQL as the source of truth, a transactional outbox to idempotent
+  Celery tasks, a persisted document state machine, sandboxed parsers, persistent agent checkpoints
+  with per-conversation locks, OpenTelemetry traces from request to worker.
+- **Measured, not assumed.** Retrieval evaluated on synthetic *and* real documents (and the gap
+  reported), re-ranking cost benchmarked, memory measured before choosing a hosting design.
+- **Two ways to run it online.** The full system on one machine, or a reduced variant on free
+  managed services, each with its own measured limits.
 
 ---
 
@@ -276,6 +292,18 @@ unanswerable ones, median answer latency 3.5 s.
 
 ---
 
+## Deployment
+
+| | Full feature (branch `main`) | Free managed hosting (branch [`free-tier`](../../tree/free-tier)) |
+|---|---|---|
+| Runs on | one machine: a free cloud VM or your own computer (`docker compose`, HTTPS via Caddy) | Streamlit Community Cloud + Render free + Supabase + Qdrant Cloud + Gemini |
+| Gives up | nothing | OCR and table layout, re-ranking, email (invite-only sign-up), always-on |
+| Guide | [docs/DEPLOYMENT_OPTIONS.md](docs/DEPLOYMENT_OPTIONS.md) | [docs/FREE_DEPLOYMENT.md](../../blob/free-tier/docs/FREE_DEPLOYMENT.md) |
+
+Why two: the full system measures about 436 MB (API) plus 816 MB (worker) at peak, while free managed
+hosts offer one 512 MB instance with no background workers and no SMTP. The free variant runs the same
+outbox and tasks inside the API process and uses hosted embeddings (about 320-450 MB measured).
+
 ## Project layout
 
 ```
@@ -283,8 +311,9 @@ backend/        FastAPI app (api, services, repositories, models, agents, retrie
                 memory, llm, infra, tasks), Alembic migrations, tests
 frontend/       Streamlit app (API client, views)
 evaluation/     datasets, evaluation scripts and committed reports
-load_testing/   concurrency benchmark (Locust scenarios in progress)
-scripts/        init_env.py, stack.py (run everything), dev_services.ps1, test.ps1
+load_testing/   concurrency benchmark
+scripts/        init_env.py, stack.py (run everything), browser_tour.py (real-browser end-to-end), test.ps1
+deploy/         single-box compose override + Caddy, Render reference, Supabase SQL, env templates
 docs/           architecture, API, security, testing, evaluation, observability, deployment, decisions
 ```
 
@@ -295,9 +324,9 @@ Honest summary of what is verified and what is not (details in [docs/KNOWN_ISSUE
 - **Verified here:** the whole backend and UI against real PostgreSQL, Redis, Qdrant and Celery on
   Windows; the real hosted-model path with Gemini's free tier.
 - **Not yet verified:** Docker images and the full Compose stack, a live hosted S3-compatible
-  object store (only an emulator was tested), cloud deployment and behaviour under load
-  (Phase 11 is skipped at the owner's request). The UI and the whole workflow were verified
-  in a real headless browser with real documents.
+  object store (only an emulator was tested), a cloud deployment, and behaviour under load (not
+  measured yet). The UI and the whole workflow were verified in a real headless browser with real
+  documents.
 - **By design:** answers stream only after they are validated and saved, so the first token arrives
   with the full answer (status events cover the wait); access tokens never reach the browser ("keep me
   signed in" stores only a revocable handle); the re-ranker costs about 2 s per question on a CPU.
@@ -316,9 +345,11 @@ Honest summary of what is verified and what is not (details in [docs/KNOWN_ISSUE
 | Evaluation | [docs/EVALUATION.md](docs/EVALUATION.md) |
 | Testing strategy | [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) |
 | Frontend | [docs/FRONTEND.md](docs/FRONTEND.md) |
-| Deployment and model setup | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Deployment options (full vs free) | [docs/DEPLOYMENT_OPTIONS.md](docs/DEPLOYMENT_OPTIONS.md) |
+| Docker and model setup | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Known issues | [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) |
 | Third-party licences | [docs/LICENSES.md](docs/LICENSES.md) |
+| How it was built (status, execution log, plans, specs) | [docs/README.md](docs/README.md) |
 
 ## License
 
