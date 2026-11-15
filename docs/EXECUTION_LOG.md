@@ -413,3 +413,10 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
   AUDIT_REPORT.md, VERIFICATION_REPORT.md, HOSTING.md and the working tree (including the newly
   visible storage adapters and password corpus). Commit/push/deploy only after owner authorization.
   Docker and hosted verification remain outstanding; G11/G12 are not passed. Phase 11 was not run.
+
+## Entry 20: Review of Codex's hosting work, deployment fixes, main + free-tier variants (2026-11-15)
+- Reviewed Codex's uncommitted hosting preparation; committed it as 1eca0d8 (incl. backend/app/storage and the password corpus, which had never been in Git). `.env.example` left unstaged (not readable under the permission rules).
+- Fixes (a9e8066): frontend starts without PYTHONPATH (reproduced `ModuleNotFoundError: No module named 'frontend'` with `streamlit run frontend/app.py` from the repo root; fixed and re-probed in a real browser); per-IP limits see end users via a secret-guarded forwarded address; single-box compose (frontend image + Caddy, API not published); explicit prod TLS exemption for a private single-box network; Argon2 prod values missing from Codex's env template (found by the new template test); S3 exists() error wrapping; render.yaml BOM + FORWARDED_ALLOW_IPS. Both Render Blueprints validate against Render's JSON schema.
+- Full suite on a9e8066: 1222 passed, 1 skipped, 2 load-sensitive timing failures (pass in isolation: 2 passed in 67 s; KI-054). `main` created at d5575d0.
+- Memory (light pipeline, laptop): API 436 MB and worker 816 MB peak, so a reduced variant lives on branch `free-tier` (ADR-042, docs/FREE_DEPLOYMENT.md); its full suite: 1255 passed, 1 skipped (dfa66ed).
+- Free-tier live runs (one API process, no Celery, real Postgres private schema/Redis/Qdrant, real Gemini, real browser): hosted embeddings ~320-450 MB, answers correct; local embeddings 837 MB (does not fit 512 MB); Gemini free embedding quota exhausted on large uploads ("You exceeded your current quota"), which exposed and fixed a retry-accounting bug in the inline runner. Nothing deployed; no accounts created.
