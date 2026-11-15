@@ -87,6 +87,11 @@ class InlineRunner:
     def start(self) -> None:
         if self._threads:
             return
+        from app.tasks.celery_app import celery_app
+
+        # A Celery worker imports the task modules (`include=`) when it starts; the API process
+        # never does, so register them here or every task name would be unknown.
+        celery_app.loader.import_default_modules()
         self._stop.clear()
         for target, name in (
             (self._work_loop, "inline-worker"),

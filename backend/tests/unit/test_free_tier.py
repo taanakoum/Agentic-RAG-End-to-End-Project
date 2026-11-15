@@ -241,3 +241,15 @@ def test_default_retrieval_mode(overrides: dict[str, Any], mode: RetrievalMode) 
     service = RetrievalService.__new__(RetrievalService)
     service._settings = make(**overrides)  # pyright: ignore[reportPrivateUsage]
     assert service.default_mode() is mode
+
+
+def test_starting_the_runner_registers_every_scheduled_task() -> None:
+    r = runner()
+    r._schedule_loop = lambda: None  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    r.start()
+    try:
+        for name, _ in r._periodic():  # pyright: ignore[reportPrivateUsage]
+            assert name in celery_app.tasks, name
+        assert "ingestion.process_document" in celery_app.tasks
+    finally:
+        r.stop()
