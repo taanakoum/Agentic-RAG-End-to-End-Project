@@ -120,7 +120,7 @@ def tour(args: argparse.Namespace) -> int:
         panel.get_by_label("Password", exact=True).fill(PASSWORD)
         panel.get_by_label("Repeat password").fill(PASSWORD)
         if args.invite:  # free-tier deployments are invite-only
-            panel.get_by_label("Invite code").fill(args.invite)
+            panel.get_by_role("textbox", name="Invite code").fill(args.invite)
         panel.get_by_role("button", name="Create account").click()
         expect(sidebar.get_by_text("Signed in as")).to_be_visible()
         sidebar.get_by_role("button", name="Sign out").click()
