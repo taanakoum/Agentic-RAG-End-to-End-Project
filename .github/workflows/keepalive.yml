@@ -1,0 +1,26 @@
+# Free tiers pause idle services (Supabase after a week, Qdrant Cloud free clusters after a week).
+# This scheduled job calls the API's readiness check, which touches PostgreSQL, Redis, Qdrant and
+# storage, every three days. Set the repository variable FREE_API_URL (Settings > Variables) to
+# https://<your-service>.onrender.com/api/v1 to enable it; it does nothing until then.
+name: keep free services awake
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.FREE_API_URL != '' }}
+    timeout-minutes: 5
+    steps:
+      - name: Wake the API and its dependencies
+        env:
+          API: ${{ vars.FREE_API_URL }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if curl --fail --silent --max-time 60 "$API/health/ready"; then echo; exit 0; fi
+            sleep 20
+          done
+          echo "API did not become ready" >&2
+          exit 1

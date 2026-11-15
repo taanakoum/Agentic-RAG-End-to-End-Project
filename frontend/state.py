@@ -26,6 +26,32 @@ def end_user_ip() -> str | None:
         return None
 
 
+def wake_backend() -> None:
+    """Free hosting: wait (once per browser session) for a sleeping API to start."""
+    cfg = config()
+    if cfg.wake_timeout_s <= 0 or st.session_state.get("backend_awake"):
+        return
+    import time
+
+    import httpx
+
+    deadline = time.monotonic() + cfg.wake_timeout_s
+    message = "Starting the server. Free hosting pauses it when idle; this takes about a minute..."
+    with st.spinner(message):
+        while True:
+            try:
+                if httpx.get(f"{cfg.api_base_url}/health/live", timeout=10.0).status_code == 200:
+                    st.session_state["backend_awake"] = True
+                    return
+            except httpx.HTTPError:
+                pass
+            if time.monotonic() > deadline:
+                break
+            time.sleep(3.0)
+    st.error("The server did not start in time. Please reload the page in a minute.")
+    st.stop()
+
+
 def config() -> FrontendConfig:
     cfg = st.session_state.get("config")
     return cfg if isinstance(cfg, FrontendConfig) else FrontendConfig.from_env()

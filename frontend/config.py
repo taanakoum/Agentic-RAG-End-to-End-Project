@@ -21,6 +21,9 @@ class FrontendConfig:
     client_ip_secret: str = ""
     # Free-tier variant: sign-up asks for the deployment's invite code.
     invite_required: bool = False
+    # Free hosting puts the API to sleep when idle; waking it takes about a minute. When > 0, the
+    # first page load waits up to this long for the API (with a message) instead of failing.
+    wake_timeout_s: float = 0.0
 
     @classmethod
     def from_env(cls) -> FrontendConfig:
@@ -29,4 +32,5 @@ class FrontendConfig:
             client_ip_secret=os.environ.get("FRONTEND_CLIENT_IP_SECRET", ""),
             invite_required=os.environ.get("FRONTEND_INVITE_REQUIRED", "").lower()
             in {"1", "true", "yes"},
+            wake_timeout_s=float(os.environ.get("FRONTEND_WAKE_TIMEOUT_S", "0") or 0),
         )

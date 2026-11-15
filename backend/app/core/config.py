@@ -214,7 +214,12 @@ class Settings(BaseSettings):
     embedding_api_key: SecretStr = SecretStr("")  # empty = LLM_API_KEY
     embedding_api_batch_size: int = Field(default=50, ge=1, le=250)
     embedding_api_timeout_s: float = Field(default=30.0, gt=0)
-    embedding_api_max_attempts: int = Field(default=5, ge=1, le=10)
+    embedding_api_max_attempts: int = Field(default=8, ge=1, le=20)
+    # Client-side cap on embedded inputs per minute (0 = none). Free quotas are per minute and
+    # are shown in the provider's console; staying under them avoids 429 storms.
+    embedding_api_inputs_per_minute: int = Field(default=0, ge=0)
+    # Minimum wait after a 429 when the provider sends no Retry-After (per-minute quotas).
+    embedding_api_rate_limit_wait_s: float = Field(default=60.0, ge=0)
     # Sign-up needs this code when set (the free variant has no email verification).
     registration_invite_code: SecretStr = SecretStr("")
     reranker_model: str = "BAAI/bge-reranker-v2-m3-int8"

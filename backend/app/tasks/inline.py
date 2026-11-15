@@ -133,8 +133,12 @@ class InlineRunner:
         if task is None:
             log.error("inline_unknown_task", task=job.name)
             return False
+        # The task reads `self.request.retries` to decide when to stop and mark the work failed
+        # (as it would under a Celery worker), so give it the attempt number. The request stays
+        # `called_directly`, which makes `self.retry(...)` re-raise instead of using a broker.
+        task.push_request(args=job.args, retries=job.attempt, called_directly=True)
         try:
-            task(*job.args)  # direct call: retry() re-raises instead of contacting a broker
+            task.run(*job.args)
         except Exception as exc:
             attempt = job.attempt + 1
             if attempt >= self.max_attempts:
@@ -153,6 +157,8 @@ class InlineRunner:
             )
             self._push(job.name, job.args, attempt=attempt, delay=delay)
             return False
+        finally:
+            task.pop_request()
         self.executed += 1
         return True
 

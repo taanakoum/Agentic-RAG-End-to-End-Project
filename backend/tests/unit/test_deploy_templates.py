@@ -82,3 +82,21 @@ def test_backend_env_template_is_a_valid_production_configuration() -> None:
             ).replace("REPLACE_WITH_A_FERNET_KEY", PLACEHOLDERS["MFA_ENCRYPTION_KEY"])
     settings = _settings_from(env)
     assert settings.app_env == "prod" and settings.postgres_sslmode == "verify-full"
+
+
+def test_free_tier_env_template_is_a_valid_free_production_configuration() -> None:
+    env: dict[str, str] = {}
+    for line in (
+        (ROOT / "deploy" / "free" / "backend.env.example").read_text(encoding="utf-8").splitlines()
+    ):
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            env[key] = (
+                value.replace("REPLACE_WITH_AT_LEAST_32_RANDOM_CHARACTERS", "r" * 40)
+                .replace("REPLACE_WITH_A_FERNET_KEY", PLACEHOLDERS["MFA_ENCRYPTION_KEY"])
+                .replace("REPLACE_WITH_AN_INVITE_CODE_OF_12_OR_MORE_CHARACTERS", "invite-code-123")
+            )
+    settings = _settings_from(env)
+    assert settings.deployment_profile == "free" and settings.task_runner == "inline"
+    assert settings.embedding_backend == "hosted" and not settings.rerank_enabled
+    assert settings.postgres_sslmode == "verify-full" and not settings.ocr_enabled

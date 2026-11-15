@@ -9,7 +9,9 @@ to the embedding provider, like questions are sent to the language model (KNOWN_
 from __future__ import annotations
 
 import math
+import threading
 import time
+from collections import deque
 from collections.abc import Sequence
 from typing import Any
 
@@ -39,6 +41,31 @@ def _fit(vector: Sequence[float], dim: int) -> list[float]:
     return [x / norm for x in cut]
 
 
+class _InputsPerMinute:
+    """Sliding one-minute window over embedded inputs, shared by all threads."""
+
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self._sent: deque[tuple[float, int]] = deque()
+        self._lock = threading.Lock()
+
+    def acquire(self, n: int) -> None:
+        if self._limit <= 0:
+            return
+        n = min(n, self._limit)
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                while self._sent and now - self._sent[0][0] >= 60.0:
+                    self._sent.popleft()
+                used = sum(count for _, count in self._sent)
+                if used + n <= self._limit:
+                    self._sent.append((now, n))
+                    return
+                wait = 60.0 - (now - self._sent[0][0])
+            time.sleep(max(wait, 0.05))
+
+
 class HostedEmbedder:
     def __init__(self, settings: Settings, *, client: httpx.Client | None = None) -> None:
         self.model_name = settings.embedding_model
@@ -46,6 +73,8 @@ class HostedEmbedder:
         self.dim = settings.embedding_dim
         self._batch = settings.embedding_api_batch_size
         self._attempts = settings.embedding_api_max_attempts
+        self._rate_wait = settings.embedding_api_rate_limit_wait_s
+        self._window = _InputsPerMinute(settings.embedding_api_inputs_per_minute)
         base = (settings.embedding_api_base_url or settings.llm_base_url).rstrip("/") + "/"
         key = (
             settings.embedding_api_key.get_secret_value() or settings.llm_api_key.get_secret_value()
@@ -63,6 +92,7 @@ class HostedEmbedder:
     def _post(self, batch: list[str]) -> list[list[float]]:
         body: dict[str, Any] = {"model": self.model_name, "input": batch, "dimensions": self.dim}
         for attempt in range(1, self._attempts + 1):
+            self._window.acquire(len(batch))
             try:
                 response = self._http.post("embeddings", json=body, headers=self._auth)
             except httpx.TransportError as exc:
@@ -74,13 +104,14 @@ class HostedEmbedder:
                 continue
             if response.status_code in _RETRY_STATUS and attempt < self._attempts:
                 retry_after = response.headers.get("retry-after", "")
-                delay = (
-                    float(retry_after)
-                    if retry_after.replace(".", "", 1).isdigit()
-                    else 2.0**attempt
-                )
+                if retry_after.replace(".", "", 1).isdigit():
+                    delay = float(retry_after)
+                elif response.status_code == 429:
+                    delay = self._rate_wait  # per-minute quota: wait for the window to pass
+                else:
+                    delay = 2.0**attempt
                 log.warning("embedding_retry", status=response.status_code, attempt=attempt)
-                time.sleep(min(delay, 60.0))
+                time.sleep(min(delay, 120.0))
                 continue
             if response.status_code != 200:
                 raise EmbeddingServiceError(f"embedding service answered {response.status_code}")

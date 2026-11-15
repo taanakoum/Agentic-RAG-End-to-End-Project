@@ -54,7 +54,7 @@ from qdrant_client import AsyncQdrantClient, QdrantClient
 
 from app.core.config import REPO_ROOT, Settings, get_settings
 from app.ingestion.chunking import Chunk
-from app.ingestion.embedding import FastEmbedEmbedder
+from app.ingestion.embedding import Embedder, get_embedder
 from app.ingestion.indexing import collection_name, ensure_collection, point_id, upsert_chunks
 from app.ingestion.parsing import SandboxedPdfParser, parse_bytes
 from app.retrieval.models import RetrievalMode
@@ -191,7 +191,7 @@ def parse_documents(settings: Settings, docs: Sequence[RealDoc]) -> dict[str, li
 
 def index_documents(
     settings: Settings,
-    embedder: FastEmbedEmbedder,
+    embedder: Embedder,
     docs: Sequence[RealDoc],
     chunks_by_doc: dict[str, list[Chunk]],
     *,
@@ -264,7 +264,7 @@ CONFIGS = (
 async def run_config(
     config: Config,
     settings: Settings,
-    embedder: FastEmbedEmbedder,
+    embedder: Embedder,
     reranker: Reranker,
     docs: Sequence[RealDoc],
     questions: Sequence[RealQuestion],
@@ -406,7 +406,7 @@ async def main_async() -> None:
             "retrieval_cache_enabled": False,
         }
     )
-    embedder = FastEmbedEmbedder(base)
+    embedder = get_embedder(base)  # local ONNX, or hosted when EMBEDDING_BACKEND=hosted
     reranker = FastEmbedReranker(base)
     chunks_by_doc = await asyncio.to_thread(parse_documents, base, docs)
     await asyncio.to_thread(index_documents, base, embedder, docs, chunks_by_doc)

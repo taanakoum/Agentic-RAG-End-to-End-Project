@@ -58,6 +58,7 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
     theme.apply()
+    state.wake_backend()
     state.restore_session()
     if not state.api().signed_in or state.user() is None:
         auth.render()

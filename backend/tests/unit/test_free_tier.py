@@ -253,3 +253,57 @@ def test_starting_the_runner_registers_every_scheduled_task() -> None:
         assert "ingestion.process_document" in celery_app.tasks
     finally:
         r.stop()
+
+
+_seen_retries: list[int] = []
+
+
+@celery_app.task(name="test.inline_counts", bind=True)
+def _counts(self: Any) -> None:
+    _seen_retries.append(int(self.request.retries or 0))
+    raise self.retry(exc=RuntimeError("again"), countdown=1, max_retries=10)
+
+
+def test_the_task_sees_the_attempt_number_like_under_a_worker() -> None:
+    """Without it the ingestion task never reaches its own 'failed after N attempts' path and the
+    work cycles forever through the reconciler (found with a real 429-limited embedding quota)."""
+    r = runner()
+    _seen_retries.clear()
+    for attempt in range(3):
+        r.run_job(_Job(time.monotonic(), attempt, "test.inline_counts", [], attempt=attempt))
+    assert _seen_retries == [0, 1, 2]
+
+
+def test_a_429_without_retry_after_waits_for_the_quota_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr("app.ingestion.hosted_embedding.time.sleep", slept.append)
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429) if calls["n"] == 1 else answer([[1.0] + [0.0] * 7])
+
+    embedder(handler, embedding_api_rate_limit_wait_s=42.0).embed_query_dense("q")
+    assert slept == [42.0]
+
+
+def test_the_inputs_per_minute_window_holds_requests_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ingestion import hosted_embedding as he
+
+    clock = {"t": 1000.0}
+    slept: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        clock["t"] += seconds
+
+    monkeypatch.setattr(he.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(he.time, "sleep", sleep)
+    window = he._InputsPerMinute(3)  # pyright: ignore[reportPrivateUsage]
+    window.acquire(2)
+    window.acquire(1)
+    assert slept == []
+    window.acquire(2)  # 3 already used in this minute: wait for the window to roll over
+    assert slept and sum(slept) == pytest.approx(60.0)

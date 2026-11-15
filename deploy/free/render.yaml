@@ -1,0 +1,32 @@
+# Free-tier Blueprint: one free web service (API + in-process tasks) and one free Key Value.
+# Apply from the Render dashboard (New > Blueprint), pointing at this file on the free-tier branch.
+# Before applying: create the environment group "rag-free" from deploy/free/backend.env.example
+# and add the Supabase CA certificate to it as the secret file supabase-ca.crt (docs/FREE_DEPLOYMENT.md).
+services:
+  - type: web
+    name: rag-free-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: free-tier
+    dockerfilePath: ./deploy/free/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health/live
+    envVars:
+      - fromGroup: rag-free
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: rag-free-kv
+          property: connectionString
+      # Render's proxy is the only route to the container; trust its X-Forwarded-For.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+
+  - type: keyvalue
+    name: rag-free-kv
+    plan: free
+    region: frankfurt
+    # Rate limits, caches and quota counters only; losing them on restart is acceptable (ADR-042).
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
