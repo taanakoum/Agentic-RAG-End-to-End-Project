@@ -11,7 +11,7 @@ import contextlib
 import json
 import threading
 import uuid
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -113,10 +113,17 @@ def iter_sse(lines: Iterable[str]) -> Iterator[JSON]:
 
 class ApiClient:
     def __init__(
-        self, config: FrontendConfig | None = None, *, tokens: Tokens | None = None
+        self,
+        config: FrontendConfig | None = None,
+        *,
+        tokens: Tokens | None = None,
+        end_user_ip: Callable[[], str | None] | None = None,
     ) -> None:
         self.config = config or FrontendConfig.from_env()
         self.tokens = tokens
+        # Read at request time: one client can serve reruns (and a remembered sign-in) of
+        # different browser connections.
+        self._end_user_ip = end_user_ip
         self._http = httpx.Client(base_url=self.config.api_base_url, timeout=self.config.timeout_s)
         self._refresh_lock = threading.Lock()
 
@@ -135,6 +142,14 @@ class ApiClient:
             headers["Authorization"] = f"Bearer {self.tokens.access}"
         return headers
 
+    def _edge_headers(self, headers: dict[str, str] | None) -> dict[str, str] | None:
+        """Add the end user's address for the API's per-IP limits (only with the shared secret)."""
+        secret = self.config.client_ip_secret
+        ip = self._end_user_ip() if (secret and self._end_user_ip) else None
+        if not ip:
+            return headers
+        return {**(headers or {}), "X-Frontend-Secret": secret, "X-End-User-IP": ip}
+
     def _send(
         self,
         method: str,
@@ -149,7 +164,7 @@ class ApiClient:
             return self._http.request(
                 method,
                 path,
-                headers=self._headers(headers) if auth else headers,
+                headers=self._edge_headers(self._headers(headers) if auth else headers),
                 timeout=timeout or self.config.timeout_s,
                 **kwargs,
             )
@@ -373,7 +388,7 @@ class ApiClient:
                 "POST",
                 "/chat/stream",
                 json={"session_id": session_id, "message": message},
-                headers=self._headers({"Idempotency-Key": key}),
+                headers=self._edge_headers(self._headers({"Idempotency-Key": key})),
                 timeout=self.config.stream_timeout_s,
             ) as response:
                 if response.status_code == 401 and retry_auth:

@@ -1,0 +1,13 @@
+# Public entry point of the single-box deployment: HTTPS (automatic Let's Encrypt certificate)
+# in front of the Streamlit frontend. The API, databases and workers are not exposed at all.
+# Caddy replaces any client-sent X-Forwarded-For with the real peer address (no trusted_proxies
+# configured), so the frontend's per-user address cannot be spoofed through it.
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:8501
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+}

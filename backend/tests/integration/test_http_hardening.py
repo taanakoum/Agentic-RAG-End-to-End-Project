@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx2
 import pytest
+from pydantic import SecretStr
 
 from app.core.config import get_settings
 from tests.integration.agent_helpers import make_actor
@@ -120,3 +121,34 @@ async def test_cors_is_off_by_default_and_exact_when_configured(
     visible = await cors.get(f"{API}/health/live", headers={"Origin": "https://app.example"})
     assert "X-Request-ID" in visible.headers["access-control-expose-headers"]
     assert "Retry-After" in visible.headers["access-control-expose-headers"]
+
+
+async def test_per_ip_limits_see_the_end_user_only_when_the_frontend_proves_itself(
+    client_with_settings: Any,
+) -> None:
+    """Behind the Streamlit server every request has the same address; the frontend forwards the
+    user's address with a shared secret so one user cannot exhaust the limit for everybody."""
+    import secrets
+    import uuid
+
+    secret = "s" * 40
+    configured = get_settings().model_copy(
+        update={
+            "frontend_client_ip_secret": SecretStr(secret),
+            "rl_login_ip_limit": 2,
+        }
+    )
+    api = await client_with_settings(configured)
+    a, b, c = (f"198.18.{secrets.randbelow(256)}.{1 + secrets.randbelow(254)}" for _ in range(3))
+
+    async def login(ip: str, presented: str = secret) -> int:
+        body = {"email": f"nobody-{uuid.uuid4().hex}@example.com", "password": "x" * 14}
+        headers = {"X-Frontend-Secret": presented, "X-End-User-IP": ip}
+        return (await api.post(f"{API}/auth/login", json=body, headers=headers)).status_code
+
+    assert [await login(a), await login(a)] == [401, 401]
+    assert await login(a) == 429  # user A is limited ...
+    assert await login(b) == 401  # ... user B is not
+    # A wrong secret is ignored: the claimed address does not count, the connection's does.
+    assert [await login(c, "wrong" * 8), await login(c, "wrong" * 8)] == [401, 401]
+    assert await login(c) == 401  # C's own bucket was never touched

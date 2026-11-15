@@ -18,10 +18,20 @@ from frontend.errors import Presentation, describe
 _PRESERVE_ON_SIGN_OUT = {"notice", "clear_cookie"}
 
 
+def end_user_ip() -> str | None:
+    """The browser connection's address (None on localhost or without a browser context)."""
+    try:
+        return st.context.ip_address
+    except Exception:
+        return None
+
+
 def api() -> ApiClient:
     client = st.session_state.get("api")
     if client is None:
-        client = ApiClient(st.session_state.get("config") or FrontendConfig.from_env())
+        client = ApiClient(
+            st.session_state.get("config") or FrontendConfig.from_env(), end_user_ip=end_user_ip
+        )
         st.session_state["api"] = client
     return client
 

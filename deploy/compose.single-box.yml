@@ -1,0 +1,77 @@
+# Full-feature deployment on ONE machine (a free cloud VM or your own computer).
+# UNVERIFIED: never run (no Docker on the development machine; KNOWN_ISSUES A2). See docs/DEPLOYMENT_OPTIONS.md.
+#
+#   docker compose -f docker-compose.yml -f deploy/compose.single-box.yml up -d --build
+#
+# Adds the Streamlit frontend and a Caddy HTTPS proxy, switches every backend service to
+# production settings, and removes the API's published port: only Caddy (80/443) is reachable.
+# Required in .env (besides docker-compose.yml's own): SITE_DOMAIN, FRONTEND_CLIENT_IP_SECRET,
+# EMAIL_FROM, SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL.
+
+x-prod-env: &prod-env
+  APP_ENV: prod
+  # PostgreSQL is on the private Docker network of this one machine (ADR-041).
+  POSTGRES_SSLMODE: disable
+  POSTGRES_PLAINTEXT_PRIVATE_NETWORK: "true"
+  ARGON2_MEMORY_KIB: "65536"
+  ARGON2_TIME_COST: "3"
+  REQUIRE_VERIFIED_EMAIL: "true"
+  APP_BASE_URL: https://${SITE_DOMAIN:?set SITE_DOMAIN in .env}
+  EMAIL_BACKEND: smtp
+  EMAIL_FROM: ${EMAIL_FROM:?set EMAIL_FROM}
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:?set SMTP_USERNAME}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:?set SMTP_PASSWORD}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+  FRONTEND_CLIENT_IP_SECRET: ${FRONTEND_CLIENT_IP_SECRET:?set FRONTEND_CLIENT_IP_SECRET (32+ random characters)}
+  LLM_BASE_URL: ${LLM_BASE_URL:?set LLM_BASE_URL}
+  LLM_API_KEY: ${LLM_API_KEY:?set LLM_API_KEY}
+  LLM_MODEL: ${LLM_MODEL:?set LLM_MODEL}
+
+services:
+  migrate:
+    environment: *prod-env
+  api:
+    ports: !reset []
+    environment:
+      <<: *prod-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+  worker:
+    environment: *prod-env
+  beat:
+    environment: *prod-env
+
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    image: agentic-rag-frontend
+    restart: unless-stopped
+    environment:
+      FRONTEND_API_URL: http://api:8000/api/v1
+      FRONTEND_CLIENT_IP_SECRET: ${FRONTEND_CLIENT_IP_SECRET}
+      # Only Caddy can reach this container, so trust its X-Forwarded-For (Streamlit runs on uvicorn).
+      FORWARDED_ALLOW_IPS: "*"
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 768m }
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - frontend
+
+volumes:
+  caddydata:
+  caddyconfig:

@@ -135,6 +135,8 @@ class S3ObjectStorage:
             if _is_not_found(exc):
                 return False
             raise StorageError("failed to check object") from exc
+        except BotoCoreError as exc:  # connection/endpoint failures, like the other operations
+            raise StorageError("failed to check object") from exc
         return True
 
     def delete(self, key: str) -> bool:

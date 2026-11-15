@@ -150,3 +150,48 @@ def test_prod_rejects_unencrypted_database_connections() -> None:
 def test_schema_cannot_inject_connection_options(schema: str) -> None:
     with pytest.raises(ValidationError):
         make(postgres_schema=schema)
+
+
+def test_frontend_client_ip_secret_must_be_long_when_set() -> None:
+    with pytest.raises(ValidationError, match="frontend_client_ip_secret"):
+        make(frontend_client_ip_secret="short")
+    assert make(frontend_client_ip_secret="z" * 32).frontend_client_ip_secret.get_secret_value()
+
+
+PROD = {
+    "app_env": "prod",
+    "postgres_password": "a-long-unique-secret",
+    "log_json": True,
+    "email_backend": "smtp",
+    "smtp_host": "smtp.example.com",
+    "require_verified_email": True,
+    "argon2_memory_kib": 65536,
+    "argon2_time_cost": 3,
+}
+
+
+@pytest.mark.parametrize("host", ["postgres", "10.0.0.4", "127.0.0.1", "172.18.0.2"])
+def test_prod_may_skip_tls_on_a_private_single_box_network_when_explicit(host: str) -> None:
+    s = make(
+        **PROD,
+        postgres_sslmode="disable",
+        postgres_host=host,
+        postgres_plaintext_private_network=True,
+    )
+    assert s.postgres_sslmode == "disable"
+
+
+@pytest.mark.parametrize("host", ["db.example.com", "aws-0-eu.pooler.supabase.com", "8.8.8.8"])
+def test_the_plaintext_opt_in_never_covers_a_public_host(host: str) -> None:
+    with pytest.raises(ValidationError, match="verify-full"):
+        make(
+            **PROD,
+            postgres_sslmode="disable",
+            postgres_host=host,
+            postgres_plaintext_private_network=True,
+        )
+
+
+def test_without_the_opt_in_prod_still_requires_tls_even_on_a_private_host() -> None:
+    with pytest.raises(ValidationError, match="verify-full"):
+        make(**PROD, postgres_sslmode="disable", postgres_host="postgres")

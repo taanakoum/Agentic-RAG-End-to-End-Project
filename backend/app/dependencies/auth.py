@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+import ipaddress
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -85,8 +87,29 @@ FeedbackServiceDep = Annotated[FeedbackService, Depends(get_feedback_service)]
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 
 
+FRONTEND_SECRET_HEADER = "X-Frontend-Secret"  # noqa: S105  (a header name)
+END_USER_IP_HEADER = "X-End-User-IP"
+
+
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    """The address used for per-IP limits.
+
+    The connection address by default. When the frontend proves itself with the shared secret, the
+    end user's address it forwards is used instead (the Streamlit server is otherwise the only
+    client the API ever sees). A missing, wrong or malformed header falls back silently.
+    """
+    fallback = request.client.host if request.client else "unknown"
+    secret = get_infra(request).settings.frontend_client_ip_secret.get_secret_value()
+    if not secret:
+        return fallback
+    presented = request.headers.get(FRONTEND_SECRET_HEADER, "")
+    claimed = request.headers.get(END_USER_IP_HEADER, "").strip()
+    if not claimed or not hmac.compare_digest(presented.encode(), secret.encode()):
+        return fallback
+    try:
+        return str(ipaddress.ip_address(claimed))
+    except ValueError:
+        return fallback
 
 
 ClientIpDep = Annotated[str, Depends(client_ip)]

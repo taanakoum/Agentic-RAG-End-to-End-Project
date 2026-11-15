@@ -16,6 +16,17 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 _INSECURE_PASSWORDS = frozenset({"", "changeme", "password", "postgres"})
 
 
+def _is_private_host(host: str) -> bool:
+    """A private/loopback IP, or a bare name such as a docker-compose service (no dots)."""
+    import ipaddress
+
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return "." not in host and host != ""
+    return address.is_private or address.is_loopback
+
+
 class Settings(BaseSettings):
     """Runtime configuration. Dev, test and prod differ only by environment values."""
 
@@ -41,6 +52,10 @@ class Settings(BaseSettings):
     postgres_schema: str = Field(default="public", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
     postgres_sslmode: Literal["disable", "verify-full"] = "disable"
     postgres_sslrootcert: Path | None = None
+    # Single-box deployments (docker-compose on one VM) reach PostgreSQL over a private Docker
+    # network that never leaves the machine. Production may then skip TLS, but only when this is
+    # set explicitly AND the host is a private address or a bare service name (ADR-041).
+    postgres_plaintext_private_network: bool = False
     db_pool_size: int = Field(default=10, ge=1, le=100)
     db_max_overflow: int = Field(default=10, ge=0, le=100)
     db_pool_timeout_s: float = Field(default=30.0, gt=0)
@@ -129,6 +144,11 @@ class Settings(BaseSettings):
     # HTTP
     max_body_bytes: int = Field(default=1024 * 1024, ge=1024)
     cors_origins: list[str] = Field(default_factory=list)
+    # The Streamlit server calls the API server-to-server, so without help every request comes from
+    # the frontend's address and all per-IP limits share one bucket. When this secret is set, a
+    # request that presents it in X-Frontend-Secret may name the end user's IP in X-End-User-IP.
+    # Empty (default) = the header is ignored and the connection address is used.
+    frontend_client_ip_secret: SecretStr = SecretStr("")
 
     # Documents / ingestion
     max_pdf_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
@@ -326,9 +346,17 @@ class Settings(BaseSettings):
             raise ValueError("storage_backend=s3 requires s3_bucket")
         if self.smtp_use_ssl and self.smtp_starttls:
             raise ValueError("smtp_use_ssl and smtp_starttls are mutually exclusive")
+        secret = self.frontend_client_ip_secret.get_secret_value()
+        if secret and len(secret) < 32:
+            raise ValueError("frontend_client_ip_secret must be at least 32 characters")
         if self.app_env == "prod":
-            if self.postgres_sslmode != "verify-full":
-                raise ValueError("prod requires postgres_sslmode=verify-full")
+            if self.postgres_sslmode != "verify-full" and not (
+                self.postgres_plaintext_private_network and _is_private_host(self.postgres_host)
+            ):
+                raise ValueError(
+                    "prod requires postgres_sslmode=verify-full (or, on one machine, "
+                    "postgres_plaintext_private_network=true with a private host)"
+                )
             if not self.require_verified_email:
                 raise ValueError("prod requires require_verified_email=true")
             if self.email_backend != "smtp" or not self.smtp_host:

@@ -1,4 +1,4 @@
-﻿# PAID FULL-FEATURE REFERENCE. Do not apply on a zero-dollar budget.
+# PAID FULL-FEATURE REFERENCE. Do not apply on a zero-dollar budget.
 # Create the rag-production environment group and CA secret file FIRST (HOSTING.md).
 # No hosted deployment or resource sizing has been verified.
 # Automatic deploys are disabled; applying a Blueprint still creates/bills services.
@@ -20,6 +20,9 @@ services:
         value: agentic-rag-api
       - key: WEB_CONCURRENCY
         value: "1"
+      # Render's proxy is the only route to the container; trust its X-Forwarded-For.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
       - key: WARM_MODELS_ON_STARTUP
         value: "true"
     disk:

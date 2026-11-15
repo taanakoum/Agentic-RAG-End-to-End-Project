@@ -6,10 +6,19 @@ model access, and the backend decides everything that matters (ownership, valida
 
 from __future__ import annotations
 
-import streamlit as st
+import sys
+from pathlib import Path
 
-from frontend import state, theme
-from frontend.views import account, auth, chat, documents, memory
+# `streamlit run frontend/app.py` puts only frontend/ on sys.path; hosts such as Streamlit Community
+# Cloud set no PYTHONPATH, so make the repository root importable before importing the package.
+_ROOT = str(Path(__file__).resolve().parents[1])
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+import streamlit as st  # noqa: E402
+
+from frontend import state, theme  # noqa: E402
+from frontend.views import account, auth, chat, documents, memory  # noqa: E402
 
 SECTIONS = {
     "Chat": chat.render,
