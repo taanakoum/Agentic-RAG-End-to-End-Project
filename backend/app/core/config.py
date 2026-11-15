@@ -220,6 +220,9 @@ class Settings(BaseSettings):
     embedding_api_inputs_per_minute: int = Field(default=0, ge=0)
     # Minimum wait after a 429 when the provider sends no Retry-After (per-minute quotas).
     embedding_api_rate_limit_wait_s: float = Field(default=60.0, ge=0)
+    # In-process cache of hosted embeddings (float32, ~3 KB per 768-dim vector), so a retried
+    # task does not spend quota re-embedding passages it already embedded. 0 = off.
+    embedding_api_cache_entries: int = Field(default=5000, ge=0)
     # Sign-up needs this code when set (the free variant has no email verification).
     registration_invite_code: SecretStr = SecretStr("")
     reranker_model: str = "BAAI/bge-reranker-v2-m3-int8"

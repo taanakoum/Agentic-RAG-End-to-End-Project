@@ -8,10 +8,12 @@ to the embedding provider, like questions are sent to the language model (KNOWN_
 
 from __future__ import annotations
 
+import hashlib
 import math
 import threading
 import time
-from collections import deque
+from array import array
+from collections import OrderedDict, deque
 from collections.abc import Sequence
 from typing import Any
 
@@ -75,6 +77,10 @@ class HostedEmbedder:
         self._attempts = settings.embedding_api_max_attempts
         self._rate_wait = settings.embedding_api_rate_limit_wait_s
         self._window = _InputsPerMinute(settings.embedding_api_inputs_per_minute)
+        self._cache: OrderedDict[bytes, array[float]] = OrderedDict()
+        self._cache_max = settings.embedding_api_cache_entries
+        self._cache_lock = threading.Lock()
+        self.cache_hits = 0
         base = (settings.embedding_api_base_url or settings.llm_base_url).rstrip("/") + "/"
         key = (
             settings.embedding_api_key.get_secret_value() or settings.llm_api_key.get_secret_value()
@@ -123,12 +129,32 @@ class HostedEmbedder:
             return [_fit(item["embedding"], self.dim) for item in data]
         raise EmbeddingServiceError("embedding service kept failing")
 
+    def _key(self, text: str) -> bytes:
+        return hashlib.sha256(f"{self.model_name}|{self.dim}|{text}".encode()).digest()
+
     def embed_dense(self, texts: Sequence[str]) -> list[list[float]]:
         items = list(texts)
-        out: list[list[float]] = []
-        for start in range(0, len(items), self._batch):
-            out.extend(self._post(items[start : start + self._batch]))
-        return out
+        keys = [self._key(t) for t in items]
+        found: dict[int, list[float]] = {}
+        with self._cache_lock:
+            for i, k in enumerate(keys):
+                hit = self._cache.get(k)
+                if hit is not None:
+                    self._cache.move_to_end(k)
+                    found[i] = hit.tolist()
+        self.cache_hits += len(found)
+        missing = [i for i in range(len(items)) if i not in found]
+        for start in range(0, len(missing), self._batch):
+            idx = missing[start : start + self._batch]
+            vectors = self._post([items[i] for i in idx])
+            with self._cache_lock:
+                for i, vec in zip(idx, vectors, strict=True):
+                    found[i] = vec
+                    if self._cache_max:
+                        self._cache[keys[i]] = array("f", vec)
+                        if len(self._cache) > self._cache_max:
+                            self._cache.popitem(last=False)
+        return [found[i] for i in range(len(items))]
 
     def embed_query_dense(self, text: str) -> list[float]:
         return self._post([text])[0]

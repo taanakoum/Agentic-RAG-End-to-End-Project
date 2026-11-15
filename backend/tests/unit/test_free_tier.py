@@ -307,3 +307,27 @@ def test_the_inputs_per_minute_window_holds_requests_back(monkeypatch: pytest.Mo
     assert slept == []
     window.acquire(2)  # 3 already used in this minute: wait for the window to roll over
     assert slept and sum(slept) == pytest.approx(60.0)
+
+
+def test_a_retried_document_does_not_spend_quota_twice() -> None:
+    sent: list[int] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        n = len(json.loads(req.content)["input"])
+        sent.append(n)
+        return answer([[1.0] + [0.0] * 7] * n)
+
+    e = embedder(handler)
+    first = e.embed_dense(["a", "b", "c"])
+    again = e.embed_dense(["a", "b", "c", "d"])  # the retry adds one new passage
+    assert sent == [2, 1, 1] and e.cache_hits == 3
+    assert all(a == pytest.approx(b) for a, b in zip(again[:3], first, strict=True))
+
+
+def test_the_cache_is_bounded() -> None:
+    def handler(req: httpx.Request) -> httpx.Response:
+        return answer([[1.0] + [0.0] * 7] * len(json.loads(req.content)["input"]))
+
+    e = embedder(handler, embedding_api_cache_entries=2)
+    e.embed_dense(["a", "b", "c"])
+    assert len(e._cache) == 2  # pyright: ignore[reportPrivateUsage]

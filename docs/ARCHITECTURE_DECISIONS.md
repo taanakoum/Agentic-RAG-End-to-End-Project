@@ -290,3 +290,24 @@ Planned with an Opus 5.5 pass (CLAUDE.md "Model escalation"); executed and verif
 - Variants: `main` stays full feature (one machine: free VM or own computer, or paid managed hosting).
   A reduced variant for free managed services lives on the `free-tier` branch (docs/DEPLOYMENT_OPTIONS.md),
   because measured memory (API ~436 MB, worker ~816 MB peak) cannot fit a 512 MB free instance.
+
+## ADR-042 (2026-11-15): Free-tier variant on its own branch
+- Context: the full app measures ~436 MB (API) + ~816 MB (worker) peak; free managed hosts give one
+  512 MB web instance, no background workers and no SMTP. `main` stays full feature; the branch
+  `free-tier` holds a reduced variant (docs/FREE_DEPLOYMENT.md). Its code is additive and selected by
+  settings whose defaults keep the full behaviour, so `main` merges into the branch cleanly.
+- Background work: `TASK_RUNNER=inline` replaces the broker transport only. The outbox, the
+  idempotent task functions, the document state machine and the reconciler are unchanged. A thread
+  in the API executes the tasks; the scheduler holds a PostgreSQL advisory lock (one runner per
+  deployment) and starts by reconciling (a sleeping host may have cut work off). The runner pushes a
+  `called_directly` request with the attempt number, so a task's own retry accounting and its
+  "failed after N attempts" path work as under Celery, and `self.retry` re-raises for the runner's
+  backoff (found when a 429-limited quota made work cycle through the reconciler).
+- Embeddings: `EMBEDDING_BACKEND=hosted` gets dense vectors from an OpenAI-compatible endpoint
+  (truncated and re-normalised to `EMBEDDING_DIM`), with a client-side inputs-per-minute window and
+  patient 429 handling; BM25 stays local. Document text reaches the provider (KNOWN_ISSUES A5).
+  An existing collection with another dimension is refused instead of corrupted.
+- Sign-up: no SMTP means no verification or reset email; `DEPLOYMENT_PROFILE=free` permits that in
+  production only with a `REGISTRATION_INVITE_CODE` (12+ chars), checked after the per-IP limit.
+- Parsing and retrieval: light pypdf pipeline, OCR off, no re-ranker; `RETRIEVAL_MODE_WITHOUT_RERANK`
+  picks dense or hybrid from the real-document evaluation of this configuration.
