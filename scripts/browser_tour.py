@@ -119,6 +119,8 @@ def tour(args: argparse.Namespace) -> int:
         panel.get_by_label("Email").fill(email)
         panel.get_by_label("Password", exact=True).fill(PASSWORD)
         panel.get_by_label("Repeat password").fill(PASSWORD)
+        if args.invite:  # free-tier deployments are invite-only
+            panel.get_by_label("Invite code").fill(args.invite)
         panel.get_by_role("button", name="Create account").click()
         expect(sidebar.get_by_text("Signed in as")).to_be_visible()
         sidebar.get_by_role("button", name="Sign out").click()
@@ -250,6 +252,7 @@ def main() -> int:
     parser.add_argument("--report", type=Path, help="write timings, answers and citations as JSON")
     parser.add_argument("--headed", action="store_true", help="show the browser window")
     parser.add_argument("--wait", type=int, default=600, help="seconds to wait for slow steps")
+    parser.add_argument("--invite", help="invite code for invite-only (free-tier) deployments")
     args = parser.parse_args()
     if not args.question:
         args.question = ["How many days of annual leave do full-time employees get?"]
