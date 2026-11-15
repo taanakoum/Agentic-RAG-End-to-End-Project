@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ssl
+
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -16,6 +18,11 @@ from app.core.telemetry import instrument_engine
 
 
 def create_async_db_engine(settings: Settings) -> AsyncEngine:
+    # asyncpg does not accept libpq's sslmode/sslrootcert URL arguments. An SSLContext
+    # enforces both CA verification and hostname checking for API connections.
+    tls: ssl.SSLContext | bool = False
+    if settings.postgres_sslmode == "verify-full":
+        tls = ssl.create_default_context(cafile=settings.postgres_sslrootcert)
     engine = create_async_engine(
         settings.database_url(driver="asyncpg"),
         pool_size=settings.db_pool_size,
@@ -23,7 +30,11 @@ def create_async_db_engine(settings: Settings) -> AsyncEngine:
         pool_timeout=settings.db_pool_timeout_s,
         pool_recycle=settings.db_pool_recycle_s,
         pool_pre_ping=True,
-        connect_args={"timeout": settings.db_connect_timeout_s},
+        connect_args={
+            "timeout": settings.db_connect_timeout_s,
+            "ssl": tls,
+            "server_settings": {"search_path": settings.postgres_schema},
+        },
     )
     instrument_engine(engine)
     return engine

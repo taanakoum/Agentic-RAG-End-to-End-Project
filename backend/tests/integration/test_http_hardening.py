@@ -100,7 +100,7 @@ async def test_cors_is_off_by_default_and_exact_when_configured(
     preflight = {
         "Origin": "https://evil.example",
         "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "authorization",
+        "Access-Control-Request-Headers": "authorization,content-type,idempotency-key,x-request-id",
     }
     off = await client.options(f"{API}/auth/login", headers=preflight)
     assert "access-control-allow-origin" not in off.headers
@@ -112,7 +112,11 @@ async def test_cors_is_off_by_default_and_exact_when_configured(
     )
     assert allowed.headers["access-control-allow-origin"] == "https://app.example"
     assert allowed.headers["access-control-allow-origin"] != "*"
+    assert allowed.status_code == 200
     denied = await cors.options(f"{API}/auth/login", headers=preflight)
     assert "access-control-allow-origin" not in denied.headers
     simple = await cors.get(f"{API}/health/live", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in simple.headers
+    visible = await cors.get(f"{API}/health/live", headers={"Origin": "https://app.example"})
+    assert "X-Request-ID" in visible.headers["access-control-expose-headers"]
+    assert "Retry-After" in visible.headers["access-control-expose-headers"]

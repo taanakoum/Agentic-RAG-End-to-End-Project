@@ -11,6 +11,8 @@ from app.core.config import Settings
 def make(**overrides: Any) -> Settings:
     overrides.setdefault("jwt_secret", "x" * 40)
     overrides.setdefault("mfa_encryption_key", "dGVzdC1vbmx5LWZlcm5ldC1rZXktMzItYnl0ZXMhISE=")
+    if overrides.get("app_env") == "prod":
+        overrides.setdefault("postgres_sslmode", "verify-full")
     return Settings.build(**overrides)
 
 
@@ -49,6 +51,7 @@ def test_prod_requires_json_logs() -> None:
 def test_prod_ok_with_strong_secret() -> None:
     s = make(
         app_env="prod",
+        postgres_sslmode="verify-full",
         postgres_password="a-long-unique-secret",
         log_json=True,
         argon2_memory_kib=65536,
@@ -128,3 +131,22 @@ def test_mfa_key_must_be_valid_fernet_key() -> None:
 def test_smtp_ssl_and_starttls_are_exclusive() -> None:
     with pytest.raises(ValidationError):
         make(smtp_use_ssl=True, smtp_starttls=True)
+
+
+def test_prod_rejects_unencrypted_database_connections() -> None:
+    with pytest.raises(ValidationError, match="postgres_sslmode=verify-full"):
+        make(
+            app_env="prod",
+            postgres_sslmode="disable",
+            postgres_password="a-long-unique-secret",
+            log_json=True,
+            email_backend="smtp",
+            smtp_host="smtp.example.com",
+            require_verified_email=True,
+        )
+
+
+@pytest.mark.parametrize("schema", ["rag;DROP TABLE users", "rag,public", "bad schema", "1rag"])
+def test_schema_cannot_inject_connection_options(schema: str) -> None:
+    with pytest.raises(ValidationError):
+        make(postgres_schema=schema)

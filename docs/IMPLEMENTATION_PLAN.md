@@ -1,5 +1,9 @@
 # Implementation Plan and Phase 0 Assessment
 
+Current owner override (2026-11-14): Phase 11 is skipped; keep Streamlit and all features while
+preparing alternative hosting and documenting free-tier blockers. Changes remain uncommitted for
+review. See IMPLEMENTATION_STATUS.md and HOSTING.md for current work; the assessment below is historical.
+
 ## Phase 0 assessment (2026-11-08)
 
 ### Repository state

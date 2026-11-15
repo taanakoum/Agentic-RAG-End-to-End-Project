@@ -492,12 +492,13 @@ async def test_closing_the_stream_cancels_the_turn_and_frees_the_conversation(
     generator, planned, frames = await drive_until_status(infra, alice, session)
     assert [f["type"] for f in frames] == ["start", "status"]
     await generator.aclose()  # what Starlette does when the client disconnects
-    row = (
-        await (await infra.session_factory().__aenter__()).execute(
-            text("SELECT status, error_code FROM chat_executions WHERE id = :i"),
-            {"i": planned.handle.execution_id},  # type: ignore[union-attr]
-        )
-    ).one()
+    async with infra.session_factory() as db:
+        row = (
+            await db.execute(
+                text("SELECT status, error_code FROM chat_executions WHERE id = :i"),
+                {"i": planned.handle.execution_id},  # type: ignore[union-attr]
+            )
+        ).one()
     assert (row.status, row.error_code) == ("cancelled", "CLIENT_DISCONNECTED")
     assert await scalar(infra, "SELECT count(*) FROM messages WHERE role = 'assistant'") == 0
     assert await scalar(infra, "SELECT count(*) FROM messages WHERE role = 'user'") == 1  # kept

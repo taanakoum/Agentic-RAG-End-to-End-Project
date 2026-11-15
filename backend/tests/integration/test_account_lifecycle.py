@@ -144,6 +144,7 @@ def test_prod_requires_verified_email_gating() -> None:
 
     base: dict[str, Any] = {
         "app_env": "prod",
+        "postgres_sslmode": "verify-full",
         "postgres_password": "a-long-unique-secret",
         "log_json": True,
         "argon2_memory_kib": 65536,

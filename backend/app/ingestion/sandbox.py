@@ -222,11 +222,12 @@ def _kill_tree(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
     if sys.platform == "win32":
-        subprocess.run(  # noqa: S603
-            ["taskkill", "/F", "/T", "/PID", str(process.pid)],  # noqa: S607
-            capture_output=True,
-            check=False,
-        )
+        # Windows sandboxes have ActiveProcessLimit=1, so this handle identifies the
+        # entire allowed workload. taskkill can fail (e.g. restricted WMI access) and
+        # leave communicate()/wait() blocked until the hostile child exits on its own.
+        # Popen.kill uses our existing process handle and TerminateProcess directly.
+        with contextlib.suppress(ProcessLookupError):
+            process.kill()
     else:  # pragma: no cover
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGKILL)

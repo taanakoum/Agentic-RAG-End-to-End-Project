@@ -1,8 +1,12 @@
 # Architecture
 
 Authoritative requirements live in `docs/spec/`; decisions and their reasons in
-`docs/ARCHITECTURE_DECISIONS.md` (ADR-001 ... ADR-032). This document explains how the system is
+`docs/ARCHITECTURE_DECISIONS.md`. This document explains how the system is
 put together and how one question travels through it.
+
+Hosting preparation retains these component boundaries: Streamlit, separate API/Celery/beat,
+PostgreSQL, Redis, Qdrant and object storage. See HOSTING.md and ADR-039 for Supabase TLS/private
+schema configuration and the documented free-tier limits. No cloud deployment is verified yet.
 
 ## 1. System overview
 

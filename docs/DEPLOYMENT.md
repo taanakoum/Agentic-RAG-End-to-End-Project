@@ -1,5 +1,10 @@
 # Deployment
 
+For the current Streamlit/Render/Supabase preparation and the explicit free-tier blockers, start
+with [HOSTING.md](HOSTING.md). The owner chose to retain Streamlit and every feature. A completely
+free Vercel/Render deployment is not available with this architecture; no services were deployed.
+The full-feature Render reference is paid and has automatic deploys disabled.
+
 STATUS: the Compose stack and Dockerfile are written but have NEVER been built or run (KI-009,
 KI-014). Nothing below has been verified in containers. Everything marked "native" was verified on
 the dev machine with locally installed PostgreSQL, Redis and Qdrant.

@@ -1,0 +1,5 @@
+# Streamlit Community Cloud looks beside the entrypoint before the repository root.
+# Frontend dependencies only; the backend uses pyproject.toml + uv.lock.
+streamlit==1.67.0
+httpx==0.28.1
+segno==1.6.6

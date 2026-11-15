@@ -23,9 +23,7 @@ CHECKPOINT_TABLES = ("checkpoints", "checkpoint_blobs", "checkpoint_writes")
 
 
 def _tables_exist(session: Session) -> bool:
-    return bool(
-        session.execute(text("SELECT to_regclass('public.checkpoints') IS NOT NULL")).scalar()
-    )
+    return bool(session.execute(text("SELECT to_regclass('checkpoints') IS NOT NULL")).scalar())
 
 
 def delete_checkpoint_threads(session: Session, thread_ids: Sequence[uuid.UUID]) -> int:

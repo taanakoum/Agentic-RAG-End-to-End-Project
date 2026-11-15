@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     postgres_host: str = "127.0.0.1"
     postgres_port: int = Field(default=5432, ge=1, le=65535)
     postgres_db: str = "rag_dev"
+    # Keep hosted application tables outside Supabase's exposed public schema.
+    postgres_schema: str = Field(default="public", pattern=r"^[a-z_][a-z0-9_]{0,62}$")
+    postgres_sslmode: Literal["disable", "verify-full"] = "disable"
+    postgres_sslrootcert: Path | None = None
     db_pool_size: int = Field(default=10, ge=1, le=100)
     db_max_overflow: int = Field(default=10, ge=0, le=100)
     db_pool_timeout_s: float = Field(default=30.0, gt=0)
@@ -323,6 +327,8 @@ class Settings(BaseSettings):
         if self.smtp_use_ssl and self.smtp_starttls:
             raise ValueError("smtp_use_ssl and smtp_starttls are mutually exclusive")
         if self.app_env == "prod":
+            if self.postgres_sslmode != "verify-full":
+                raise ValueError("prod requires postgres_sslmode=verify-full")
             if not self.require_verified_email:
                 raise ValueError("prod requires require_verified_email=true")
             if self.email_backend != "smtp" or not self.smtp_host:
@@ -345,6 +351,13 @@ class Settings(BaseSettings):
 
     def database_url(self, *, driver: Literal["asyncpg", "psycopg"]) -> URL:
         """SQLAlchemy URL object (keeps the password out of string formatting)."""
+        query: dict[str, str] = {}
+        if driver == "psycopg":
+            query["sslmode"] = self.postgres_sslmode
+            query["connect_timeout"] = str(self.db_connect_timeout_s)
+            if self.postgres_sslmode == "verify-full" and self.postgres_sslrootcert is not None:
+                query["sslrootcert"] = str(self.postgres_sslrootcert)
+            query["options"] = f"-csearch_path={self.postgres_schema}"
         return URL.create(
             drivername=f"postgresql+{driver}",
             username=self.postgres_user,
@@ -352,6 +365,7 @@ class Settings(BaseSettings):
             host=self.postgres_host,
             port=self.postgres_port,
             database=self.postgres_db,
+            query=query,
         )
 
     def collection_name(self, base: str) -> str:

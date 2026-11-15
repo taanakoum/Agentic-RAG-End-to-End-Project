@@ -9,10 +9,10 @@ Built with FastAPI, LangGraph, PostgreSQL, Qdrant, Redis/Celery and Streamlit. I
 against a **free hosted language model**: no GPU, no paid service and no local model download is needed
 for the language model.
 
-> Status: feature complete for the core product and thoroughly tested (1,193 automated tests with 93%
+> Status: feature complete for the core product and thoroughly tested (1,202 automated tests passed; 93%
 > line coverage, strict type checking, security and failure-recovery suites, plus a real-browser
-> walk-through). Load testing and a verified Docker deployment
-> are the remaining roadmap items; see [Status and limitations](#status-and-limitations).
+> walk-through). Docker and cloud deployment verification remain open; load testing is skipped
+> at the owner's request. See [Status and limitations](#status-and-limitations).
 
 ---
 
@@ -138,6 +138,12 @@ Full explanation, including the agent loop and a turn-by-turn sequence:
 
 ## Run it on your laptop
 
+For hosted setup, see **[hosting preparation](docs/HOSTING.md)**: Streamlit is retained, with
+Community Cloud as the free frontend alternative; Supabase PostgreSQL/Storage and a paid Render
+backend reference are prepared. Vercel Functions do not provide the persistent Streamlit server,
+and Render has no free Celery workers. No cloud deployment has been verified. Phase 11 load testing
+is skipped at the owner's request.
+
 You need: **Python 3.13** (via [uv](https://docs.astral.sh/uv/)), about **6 GB of free disk** (search
 models and Docling download on first use) and **PostgreSQL, Redis and Qdrant** reachable on localhost
 (Docker is the easiest way). A free language-model API key is optional: without it uploads, search and
@@ -222,8 +228,8 @@ OpenAI-compatible server and point `LLM_BASE_URL` at it ([docs/SECURITY.md](docs
 ## Quality, tests and measured results
 
 ```bash
-uv run --no-sync pytest backend/tests/unit              # 528 tests, no services needed
-uv run --no-sync pytest                                 # everything: 1,194 tests (needs the services)
+uv run --no-sync pytest backend/tests/unit              # 594 tests, no services needed
+uv run --no-sync pytest                                 # 1,203 collected; 1 optional live-model skip
 uv run --no-sync ruff check . && uv run --no-sync ruff format --check . && uv run --no-sync pyright
 ```
 
@@ -288,10 +294,10 @@ Honest summary of what is verified and what is not (details in [docs/KNOWN_ISSUE
 
 - **Verified here:** the whole backend and UI against real PostgreSQL, Redis, Qdrant and Celery on
   Windows; the real hosted-model path with Gemini's free tier.
-- **Not yet verified:** the Docker images and the full compose stack (never built on the author's
-  machine), an S3/MinIO object store (only an S3 emulator), a real-browser walk-through by the author
-  and behaviour under load (Phase 11 is the next milestone). The UI and the whole workflow were
-  verified in a real headless browser with real documents.
+- **Not yet verified:** Docker images and the full Compose stack, a live hosted S3-compatible
+  object store (only an emulator was tested), cloud deployment and behaviour under load
+  (Phase 11 is skipped at the owner's request). The UI and the whole workflow were verified
+  in a real headless browser with real documents.
 - **By design:** answers stream only after they are validated and saved, so the first token arrives
   with the full answer (status events cover the wait); access tokens never reach the browser ("keep me
   signed in" stores only a revocable handle); the re-ranker costs about 2 s per question on a CPU.

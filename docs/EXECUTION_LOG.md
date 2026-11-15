@@ -327,3 +327,89 @@ Append one entry per milestone: what was implemented, files changed, decisions, 
 - Real-browser end-to-end run (`scripts/stack.py start`, then `scripts/browser_tour.py` with NIST SP 800-63B, Attention Is All You Need and calibre_demo.docx, 6 questions): all answers correct, but Q2 and Q3 showed raw source labels ("[S1, S2]", "[S2, S3, S4, S6]") and Q2's second citation had no marker. Cause: `_MARKER` in `app/agents/citations.py` matched single labels only. Fix d8dcb85: grouped markers (comma/semicolon) become "[1, 2]", unverified labels inside are dropped, an all-unverified group vanishes; `unit/test_agent_contracts.py` +5 cases -> 51 passed; ruff/pyright clean. 0 of 6 questions skipped re-ranking in that run (traces: 6 `retrieval.rerank` spans), consistent with the ~10% skip rate measured offline.
 - Complete suite after the fix: `uv run --no-sync pytest -q -p no:cacheprovider` -> **1193 passed, 1 skipped** in 2188 s.
 - Browser tour repeated on a restarted stack with the fix: signed in kept after reload; documents Ready after 252.6 s (NIST 244.1 s, paper 82.8 s, DOCX 83.7 s); six correct answers in 2.9-6.5 s, every marker numbered ("[1]"), "N = 6" clean. Screenshots in `docs/images/` and `evaluation/reports/browser_tour_real_docs.md/json` regenerated from this run.
+
+---
+## Entry 19: Code review and hosting preparation, Phase 11 skipped, no commits
+- Date: 2026-11-14. Owner requested the same repository rules as Claude, with explicit overrides:
+  skip Phase 11 and do not commit before owner review. Existing branch retained:
+  `feature/phase-6-single-agent`; starting working tree was clean. No staging, commit, push,
+  account creation, purchase or deployment. Usage counter unavailable; checkpoints recorded in
+  these docs without committing, honoring the owner's override.
+- Read CLAUDE.md, status/log/issues, specs 07/08/09 and the repository verification-gate/phase-runner
+  skills. Checked current official Render, Vercel, Streamlit, Supabase, SQLAlchemy and psycopg docs.
+  After explaining the Streamlit/Celery/free-tier constraints, owner selected: keep Streamlit and
+  every feature; document alternative frontend hosting and the free-tier blockers (ADR-039).
+- Critical packaging finding: `.gitignore` excluded `backend/app/storage/*` and
+  `backend/app/core/data/common_passwords.txt`. Anchored runtime exclusions so these required files
+  are now visible for review; none are staged. Added Docker exclusions for secrets/runtime data,
+  Streamlit secret exclusions, frontend-only dependency pins and an example frontend secret.
+- Hosted DB: verified-TLS settings shared by asyncpg/psycopg/Alembic/LangGraph; prod requires
+  verify-full. Added a validated private-schema search path, fresh-project Supabase SQL with a
+  dedicated role, and a hosted environment template. API CORS now allows chat Idempotency-Key and
+  exposes request IDs/retry hints. Docker respects PORT, defaults to one process, includes CA roots
+  and has Render secret-file group access. Full-feature paid Render Blueprint has auto-deploy off;
+  it does not represent free hosting or create anything until separately applied.
+- Verification found a real Windows sandbox bug: unchecked taskkill failed to stop a sleeping child;
+  a 2-second timeout ran 120 seconds. Changed Windows termination to the retained process handle
+  (ADR-040); the one-process job limit still applies. Added private-schema coverage and fixed the
+  checkpoint purge's hardcoded public-schema existence check so it uses the same search path.
+- Initial `uv run --no-sync pytest backend/tests/unit -q` could not access the external uv cache.
+  Used the existing environment directly: `$py='C:/Users/ali_a/devtools/venv/Scripts/python.exe'`.
+  An initial direct unit run hit temp-permission errors and was interrupted; rerun with
+  `--basetemp=data/pytest-deploy-unit-1 -x -q` -> **429 passed, 1 failed** in 144.10 s (the sandbox
+  timeout). `& $py -m pytest backend/tests/unit/test_sandbox.py backend/tests/unit/test_warm_sandbox.py
+  -x -q --basetemp=data/pytest-sandbox-fixed` -> **33 passed** in 25.67 s after the fix.
+- `& $py -m pytest backend/tests/unit/test_config.py backend/tests/unit/test_hosted_database.py
+  backend/tests/integration/test_hosted_schema.py backend/tests/integration/test_http_hardening.py
+  backend/tests/integration/test_database_migrations.py backend/tests/integration/test_checkpointer_init.py
+  backend/tests/integration/test_account_lifecycle.py -x -q --basetemp=data/pytest-hosting-targeted`
+  -> **65 passed** in 38.86 s. This precedes the final private-schema purge extension, which will be
+  verified separately. Default pytest cache denied writes; final runs use `-o cache_dir=data/pytest-cache`.
+- Pyright initially resolved a wrong Python environment; use `& $py -m pyright --pythonpath $py`.
+  A new test's parsed CA-path type was narrowed after 2 reported type errors; subsequent strict
+  Pyright -> **0 errors, 0 warnings**. Ruff checks pass after formatting previously ignored storage
+  files and new tests. Final checks/results recorded below before handoff.
+- Downloaded Render's public JSON Schema (read-only public request with approved sandbox escape,
+  after the sandbox blocked the network socket), then validated `deploy/render.yaml` using installed
+  yaml/jsonschema. Initial validation caught YAML `off` being a boolean; quoted it. Final official
+  schema validation **PASS**. No Render API/account/deployment request was made.
+- Packaging check: Git check-ignore finds no required Python source or password corpus excluded.
+  Created an isolated source snapshot under ignored `data/deployment-source-smoke` from
+  `git ls-files --cached --others --exclude-standard` (261 backend/frontend code/data/asset files),
+  with test-only keys and no .env; fresh subprocess imported API, S3 storage and frontend client
+  from that snapshot and loaded the password corpus -> **PASS**. This validates the candidate
+  working tree, not a committed remote checkout. The owner must include the new files when approving a commit.
+- `docker --version` -> command unavailable; Docker image/Linux sandbox/Compose gates cannot run.
+  Hosted Supabase TLS/S3/SMTP and cloud restart/UI verification remain pending. No G11/G12 pass.
+  Added HOSTING.md (official links and exact deployment/verification steps), AUDIT_REPORT.md and
+  VERIFICATION_REPORT.md; kept implementation status/issues/decisions current.
+- Full suite command:
+  `& $py -m pytest -q -x --basetemp=data/pytest-deployment-full -o cache_dir=data/pytest-cache`.
+  -> **1202 passed, 1 skipped, 160 warnings in 1264.13 s**. The skip is the optional live hosted
+  model test. Warnings: 157 existing Celery Redis setex deprecations, 2 expected compatibility
+  warnings in deliberate Qdrant outages, and one unclosed-session warning in the disconnect test.
+- Fresh final-code regression after the checkpoint-purge adjustment/test extension:
+  `& $py -m pytest backend/tests/integration/test_hosted_schema.py backend/tests/integration/test_checkpointer.py
+  backend/tests/integration/test_account_lifecycle.py backend/tests/unit/test_hosted_database.py
+  -q -x --basetemp=data/pytest-deployment-final-regression -o cache_dir=data/pytest-cache`
+  -> **33 passed, 3 existing Redis warnings in 21.85 s**. A real graph persists, deletes a thread
+  and sweeps orphan checkpoints under a fresh private schema; no public-schema fallback is used.
+- The full run's connection warning came from the test itself manually calling session.__aenter__
+  with no __aexit__, not the application cancellation path. Fixed the test to use async with.
+  `& $py -m pytest backend/tests/integration/test_chat_api.py -q -x
+  --basetemp=data/pytest-chat-session-cleanup -o cache_dir=data/pytest-cache
+  -W error::sqlalchemy.exc.SAWarning` -> **27 passed in 34.45 s, no warnings**.
+- Final `& $py -m ruff check .` -> **all checks passed**;
+  `& $py -m ruff format --check .` -> **284 files already formatted**;
+  `& $py -m pyright --pythonpath $py` -> **0 errors, 0 warnings, 0 informations**.
+  Local links in README/hosting/audit/verification/deployment/frontend docs checked -> **PASS**.
+  `git diff --check` -> **PASS**; `git diff --cached --name-only` -> empty;
+  `git log -1 --oneline` remains `c7e66be` (the original HEAD). No staged files or commits.
+- Refreshed stale implementation/security documentation so earlier Phase 2/3 notes no longer
+  claim that implemented password checks, key rotation, isolation or parser sandboxes are absent.
+  Collection check: **1203 total tests, 594 unit tests**. No coverage remeasurement or live-browser
+  tour was attempted in this session; earlier dated evidence remains labelled as such.
+- Handoff: local preparation and review fixes are complete and uncommitted. Owner reviews
+  AUDIT_REPORT.md, VERIFICATION_REPORT.md, HOSTING.md and the working tree (including the newly
+  visible storage adapters and password corpus). Commit/push/deploy only after owner authorization.
+  Docker and hosted verification remain outstanding; G11/G12 are not passed. Phase 11 was not run.

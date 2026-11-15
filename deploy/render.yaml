@@ -1,0 +1,62 @@
+﻿# PAID FULL-FEATURE REFERENCE. Do not apply on a zero-dollar budget.
+# Create the rag-production environment group and CA secret file FIRST (HOSTING.md).
+# No hosted deployment or resource sizing has been verified.
+# Automatic deploys are disabled; applying a Blueprint still creates/bills services.
+services:
+  - type: web
+    name: rag-api
+    runtime: docker
+    region: frankfurt
+    plan: pro
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+    preDeployCommand: alembic -c alembic.ini upgrade head
+    healthCheckPath: /api/v1/health/ready
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - fromGroup: rag-production
+      - key: SERVICE_NAME
+        value: agentic-rag-api
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: WARM_MODELS_ON_STARTUP
+        value: "true"
+    disk:
+      name: api-model-cache
+      mountPath: /data/models
+      sizeGB: 10
+
+  - type: worker
+    name: rag-worker
+    runtime: docker
+    region: frankfurt
+    plan: pro plus
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+    dockerCommand: celery -A app.tasks.celery_app:celery_app worker --loglevel=INFO --concurrency=1
+    maxShutdownDelaySeconds: 300
+    envVars:
+      - fromGroup: rag-production
+      - key: SERVICE_NAME
+        value: agentic-rag-worker
+    disk:
+      name: worker-model-cache
+      mountPath: /data/models
+      sizeGB: 10
+
+  - type: worker
+    name: rag-beat
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: "off"
+    dockerCommand: celery -A app.tasks.celery_app:celery_app beat --loglevel=INFO --schedule=/data/beat/schedule
+    envVars:
+      - fromGroup: rag-production
+      - key: SERVICE_NAME
+        value: agentic-rag-beat
+

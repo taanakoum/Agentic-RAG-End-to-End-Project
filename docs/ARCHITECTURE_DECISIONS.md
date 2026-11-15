@@ -252,3 +252,26 @@ Planned with an Opus 5.5 pass (CLAUDE.md "Model escalation"); executed and verif
 - Kept: model `BAAI/bge-reranker-v2-m3-int8` (jina-v2-base-multilingual and MiniLM-L12 lose quality on at least one dataset); `RERANK_MAX_CHARS=2000` (1200/800 cut the answer-bearing sentence: synthetic hit@1 34/36 -> 12/36); 5 candidates; ONNX threads at the library default (`RERANK_THREADS=0`; pinning 2/4/8 threads was not faster: p50 5.3/4.1/4.4 s vs 4.1 s default for five 2000-character passages). Rule: `INFERENCE_THREADS x RERANK_THREADS <= logical cores` when set.
 - Added: adaptive skip (`app/retrieval/skip.py`): the cross-encoder is not called when the best fused chunk is rank 1 in both dense and sparse lists and its RRF score leads the runner-up by `RERANK_SKIP_MARGIN` (relative). Default 0.1: no quality change on either dataset, 6 of 64 questions skip re-ranking. Recorded as `rerank_skipped` on the result and the span; part of the retrieval-cache key. Honest expectation: a modest average saving (~10% of questions save the full re-rank time); the large levers remain a GPU or `RERANK_ENABLED=false` (10 ms hybrid) when the quality trade-off is acceptable.
 - Added: models are warmed at API start-up for local runs (`scripts/stack.py` and the generated `.env` set `WARM_MODELS_ON_STARTUP=true`), so the first question does not pay the model load.
+
+## ADR-039: Preserve Streamlit/features and document the actual hosting boundary
+- Date: 2026-11-14. Owner explicitly selected this option after the hosting constraints were presented.
+- Phase 11 load testing is skipped. Streamlit stays; a Vercel frontend rewrite is out of scope.
+  Community Cloud is the free frontend alternative. Render's paid API/worker/beat reference is
+  documented as paid; no all-free deployment is claimed and no service is created or deployed.
+- PostgreSQL may be Supabase with verified TLS and a private schema, using session pooler port 5432
+  for IPv4 and session advisory locks. All database clients share the same TLS/search-path settings.
+  Supabase Auth/Data APIs do not replace FastAPI authorization. Use a dedicated role and do not
+  expose the rag schema. Supabase Storage uses the existing S3 adapter; live verification is pending.
+- Keep Redis/Qdrant, Docling, OCR, reranking, outbox, maintenance tasks and verified-email gating.
+  Do not silently remove them or run Celery inside the sleeping API to fit free plans.
+- Details and official sources are in HOSTING.md. Docker/cloud gates stay unpassed. All changes,
+  including previously ignored required source, remain unstaged and uncommitted for owner review.
+
+## ADR-040: Terminate Windows sandbox work through its process handle
+- Date: 2026-11-14. Actual unit verification reproduced a 120-second wait for a 2-second timeout.
+- The unchecked external taskkill call can fail under restricted process-query permissions. Its
+  failure was ignored and communicate()/wait() waited for the hostile child to exit naturally.
+- Windows sandbox jobs limit ActiveProcessLimit to 1, so Popen.kill/TerminateProcess on the retained
+  child handle terminates the entire allowed workload without depending on taskkill. Keep job-object
+  resource limits and the POSIX process-group termination path. Existing timeout/memory/crash/recycle
+  tests verify the fix (33 sandbox tests passed). This does not verify Linux container limits.

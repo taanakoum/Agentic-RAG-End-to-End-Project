@@ -4,6 +4,10 @@
 store or model access; the backend decides everything that matters (ownership, validation, limits,
 citations). ADR-031 records the design.
 
+Hosted preparation retains this Streamlit frontend. Use [HOSTING.md](HOSTING.md) for the free
+Community Cloud alternative and the documented Vercel/Render constraints; no hosted frontend has
+been deployed or verified yet.
+
 ## Run it
 
 Everything (migrations, API, worker, beat, UI) with one command; see [LOCAL_SETUP.md](LOCAL_SETUP.md):

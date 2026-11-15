@@ -3,8 +3,8 @@
 States: NOT_STARTED | IN_PROGRESS | IMPLEMENTED | TESTED | VERIFIED | BLOCKED
 VERIFIED only after verification actually passed; put evidence (command + result) in EXECUTION_LOG.md.
 
-**Current phase:** 11 (Load, gate G10) is PAUSED by the user; the repository was prepared for publication instead (log entry 16); the frontend was redesigned and the remaining known issues (except language model, performance, security/abuse) were worked through (entries 17-18; full suite 1193 passed, 1 skipped; real-browser tour with real documents passed on 2026-11-13). Phases 2, 3, 4, 5, 6, 8, 9 and 10 VERIFIED natively (Phase 6 also against a live free Gemini model; Phase 7 REMOVED; Phase 9 also in a real headless browser; Phase 10 without the Docker smoke test). Phase 1 TESTED natively; G1 BLOCKED on Docker.
-**Next step:** (a) Actions for the user are in docs/KNOWN_ISSUES.md section 1 (rotate the key, WSL2/Docker, licence, `.env.example`, provider choice). (b) Resume Phase 11: read docs/spec/07 (Load testing) and docs/spec/09 (G10); Locust is installed and pinned; write a fake OpenAI-compatible model server (so no quota is spent), a Locust file, a resource sampler and a level runner; run 1/10/25/50 users with `scripts/stack.py` on the dev machine, record hardware and real numbers, fix the bottlenecks found. Phase 12 is Docker + deployment (needs A2).
+**Current phase:** 12 IN_PROGRESS; hosting preparation locally tested and ready for owner review (2026-11-14, log entry 19). Phase 11/G10 load testing is explicitly SKIPPED by the owner. The owner chose to keep Streamlit and all features after reviewing Vercel/Render free-tier blockers: Community Cloud frontend alternative, Supabase private PostgreSQL schema/S3, and a paid Render reference. No staging, commit, purchase or deployment was performed; everything awaits code review. G11/G12 remain unpassed because Docker and live cloud verification are outstanding. Historical phase evidence below is retained.
+**Next step:** Owner review of the uncommitted changes, `docs/VERIFICATION_REPORT.md`, `docs/AUDIT_REPORT.md` and `docs/HOSTING.md`. Full native suite: 1202 passed, 1 skipped; final private-schema regression: 33 passed; chat cleanup regression: 27 passed. Owner review comes before any commit. After separately authorized publishing/deployment, run the Docker gate and hosted verification checklist; do not resume Phase 11 unless the owner asks. Outstanding user actions remain in `docs/KNOWN_ISSUES.md` section 1.
 **Last usage reading:** could not be measured (no usage tool in session; KI-002)
 
 ## Phases / Gates
@@ -21,26 +21,26 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | 8 Eval + Observability | - | VERIFIED (native; OTLP verified against a local receiver only, KI-037) | Log entry 13; ADR-030; docs/EVALUATION.md, docs/OBSERVABILITY.md |
 | 9 Frontend | G8 | VERIFIED (AppTest + live backend + real headless browser) | Log entries 14, 16; ADR-031, ADR-033; docs/FRONTEND.md |
 | 10 Test + Harden | G9 | VERIFIED (native; Docker smoke test BLOCKED, KI-014) | Log entry 15; ADR-032; docs/TESTING_STRATEGY.md |
-| 11 Load | G10 | NOT_STARTED | |
-| 12 Docker + Deploy | G11, G12 | NOT_STARTED | |
+| 11 Load | G10 | NOT_STARTED (SKIPPED by owner 2026-11-14) | Log entry 19; no load/capacity claim |
+| 12 Docker + Deploy | G11, G12 | IN_PROGRESS (hosting preparation; Docker/cloud verification pending) | Log entry 19; HOSTING.md, AUDIT_REPORT.md, VERIFICATION_REPORT.md |
 
 ## Requirements (see docs/spec/08-acceptance.md)
 | Requirement | Status | Evidence |
 |---|---|---|
-| Interactive/background pipelines separate | NOT_STARTED | |
-| Versioned modular FastAPI | TESTED (auth + health routers only) | Log entry 5 |
+| Interactive/background pipelines separate | VERIFIED (native) | Log entries 7, 11, 15, 19 |
+| Versioned modular FastAPI | VERIFIED (native) | Log entries 5..15, 19 |
 | Registration/login/refresh/logout/revocation | VERIFIED | Log entry 5 |
 | Argon2id | VERIFIED | Log entry 5 |
 | Normalized-email unique constraint | VERIFIED | Log entry 5 |
-| User isolation (API/Qdrant/checkpoints/memory/jobs/storage) | PARTIAL (auth sessions, documents, jobs, storage, vector maintenance filters proven; chat/checkpoints/memory/query filters pending) | Log entries 5, 7 |
+| User isolation (API/Qdrant/checkpoints/memory/jobs/storage) | VERIFIED (native) | Log entries 5, 7, 9..11, 15, 19 |
 | PDF validation (magic bytes + parser) | VERIFIED | Log entry 7 |
 | Invalid/encrypted/scanned/corrupted/oversized handling | VERIFIED | Log entry 7 |
 | Persistent object storage | VERIFIED (local volume + S3 protocol via emulator) | Log entries 6, 7 |
 | Celery ingestion | VERIFIED | Log entry 7 |
 | Outbox, idempotency, retries | VERIFIED | Log entry 7 |
-| Multiple formats (PDF, DOCX, TXT, MD, CSV) + sandboxed parsing + Docling | TESTED (Windows) | Log entry 8 |
-| Account deletion, breached-password check, verified-email gating | TESTED | Log entry 8 |
-| Orphan sweep | TESTED | Log entry 8 |
+| Multiple formats (PDF, DOCX, TXT, MD, CSV) + sandboxed parsing + Docling | VERIFIED (native Windows; Linux pending) | Log entries 8, 15, 19 |
+| Account deletion, breached-password check, verified-email gating | VERIFIED (native) | Log entries 8, 15, 19 |
+| Orphan sweep | VERIFIED (native) | Log entries 8, 15, 19 |
 | Qdrant indexing/retrieval | VERIFIED (indexing + authorized hybrid search) | Log entries 7, 9 |
 | Hybrid dense+sparse+RRF | VERIFIED (tests + evaluation) | Log entry 9 |
 | Cross-encoder rerank | VERIFIED (tests + evaluation; CPU cost KI-023) | Log entry 9 |
@@ -52,13 +52,13 @@ VERIFIED only after verification actually passed; put evidence (command + result
 | Same-thread concurrency control | VERIFIED (ChatTurnService + /chat endpoints) | Log entries 10, 11 |
 | Persistent sessions + PG checkpoints | VERIFIED (real LLM-free graph; agent graphs in Phase 6) | Log entry 10 |
 | Persistent memory | VERIFIED (rule-based consolidation; LLM extractor KI-026) | Log entry 10 |
-| Rate limiting | PARTIAL (auth endpoints only; LLM/upload limits pending) | Log entry 5 |
+| Rate limiting | VERIFIED (native; auth/upload/search/chat/model quota) | Log entries 5, 7, 9, 11, 15, 19 |
 | Centralized errors | TESTED (contract + handlers) | Log entry 5 |
-| Observability (OTel + LLM tracing) | NOT_STARTED | |
-| Evaluation reports | PARTIAL (chunking + retrieval reports; generation/agent evals pending) | Log entries 8, 9 |
-| Streamlit frontend | NOT_STARTED | |
-| Unit / integration / E2E / security / concurrency tests | NOT_STARTED | |
-| Load test results | NOT_STARTED | |
+| Observability (OTel + LLM tracing) | VERIFIED (native) | Log entries 13, 18, 19 |
+| Evaluation reports | VERIFIED (documented datasets; not a general-quality promise) | Log entries 8, 9, 11..13, 18 |
+| Streamlit frontend | VERIFIED (native; cloud pending) | Log entries 14..18, 19 |
+| Unit / integration / E2E / security / concurrency tests | VERIFIED (native) | Log entries 15, 18, 19; full suite 1202 passed / 1 skipped |
+| Load test results | SKIPPED by owner 2026-11-14 | Log entry 19; no capacity claims |
 | Docker full stack | NOT_STARTED | |
-| Deployment (verified or documented blocker) | NOT_STARTED | |
-| Docs + final report + audit | NOT_STARTED | |
+| Deployment (verified or documented blocker) | Prepared; Docker/live cloud checks pending, free-tier blockers documented | Log entry 19; HOSTING.md |
+| Docs + final report + audit | IMPLEMENTED; owner review and cloud verification outstanding | Log entry 19; AUDIT_REPORT.md, VERIFICATION_REPORT.md |

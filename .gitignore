@@ -4,6 +4,8 @@
 !.env.example
 *.pem
 *.key
+.streamlit/secrets.toml
+**/.streamlit/secrets.toml
 
 # ---------------------------------------------------------------- private notes (never published)
 private/
@@ -29,8 +31,8 @@ coverage.json
 htmlcov/
 
 # ---------------------------------------------------------------- runtime data (models, uploads, vectors, logs)
-data/
-storage/
+/data/
+/storage/
 *.log
 evaluation/.cache/
 
