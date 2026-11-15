@@ -275,3 +275,18 @@ Planned with an Opus 5.5 pass (CLAUDE.md "Model escalation"); executed and verif
   child handle terminates the entire allowed workload without depending on taskkill. Keep job-object
   resource limits and the POSIX process-group termination path. Existing timeout/memory/crash/recycle
   tests verify the fix (33 sandbox tests passed). This does not verify Linux container limits.
+
+## ADR-041 (2026-11-15): Deployment fixes: end-user address, single-box TLS exemption, two variants
+- Per-IP limits: the API only ever sees the Streamlit server. When `FRONTEND_CLIENT_IP_SECRET` is set
+  on both sides, the frontend sends `X-End-User-IP` (from `st.context.ip_address`) with the secret in
+  `X-Frontend-Secret`; the API uses the claimed address only when the secret matches (constant-time)
+  and the value parses as an IP, otherwise the connection address. Streamlit documents
+  `ip_address` as spoofable unless a proxy in front overwrites forwarded headers, so this is a
+  best-effort key; the per-account lockout does not depend on it. Behind Caddy (single box) the
+  frontend trusts Caddy's X-Forwarded-For (`FORWARDED_ALLOW_IPS=*`, reachable only from Caddy).
+- Production requires verified TLS to PostgreSQL (ADR-039). A single-box compose deployment keeps
+  PostgreSQL on a private Docker network instead; `POSTGRES_PLAINTEXT_PRIVATE_NETWORK=true` allows
+  that in prod only for private IPs and bare service names (tested), never for public hosts.
+- Variants: `main` stays full feature (one machine: free VM or own computer, or paid managed hosting).
+  A reduced variant for free managed services lives on the `free-tier` branch (docs/DEPLOYMENT_OPTIONS.md),
+  because measured memory (API ~436 MB, worker ~816 MB peak) cannot fit a 512 MB free instance.
